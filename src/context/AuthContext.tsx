@@ -13,17 +13,18 @@ import {
   signInWithCredential,
   OAuthProvider
 } from 'firebase/auth';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase/index';
-// import { GoogleSignin } from '@react-native-google-signin/google-signin';
-// import * as AppleAuthentication from 'expo-apple-authentication';
-// import * as Crypto from 'expo-crypto';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import * as AppleAuthentication from 'expo-apple-authentication';
+import * as Crypto from 'expo-crypto';
 
 // Initialize Google Sign-In
-// GoogleSignin.configure({
-//    webClientId: 'YOUR_WEB_CLIENT_ID.apps.googleusercontent.com', // Get this from Google Cloud Console (Web Client ID)
-// });
+// IMPORTANT: Replace 'YOUR_WEB_CLIENT_ID' with the actual Web Client ID from Firebase Console -> Authentication -> Google
+GoogleSignin.configure({
+   webClientId: '1081960231146-12en6go2743j8tq496kem93hi26g4tbd.apps.googleusercontent.com', 
+});
 
 interface AuthContextType {
   user: User | null;
@@ -76,21 +77,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const provider = new GoogleAuthProvider();
         await signInWithPopup(auth, provider);
       } else {
-         // NOTE: Google Sign-In requires native module rebuilding. 
-         // Temporarily disabled to prevent crashes until rebuild.
-         throw new Error("Please rebuild the app to use Google Sign-In.");
-         /*
-         await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-         const signInResult = await GoogleSignin.signIn();
-         let idToken = signInResult.data?.idToken || signInResult.idToken;
-         
-         if (!idToken) {
-             throw new Error('No ID token found');
+         try {
+             await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+             const signInResult = await GoogleSignin.signIn();
+             let idToken = signInResult.data?.idToken || signInResult.idToken;
+             
+             if (!idToken) {
+                 throw new Error('No ID token found');
+             }
+             
+             const googleCredential = GoogleAuthProvider.credential(idToken);
+             await signInWithCredential(auth, googleCredential);
+         } catch (error: any) {
+             if (error.code === '12500') {
+                 // 12500: SIGN_IN_FAILED - usually missing SHA-1 or wrong webClientId
+                 console.error("Google Sign-In 12500 Error: Check SHA-1 in Firebase Console and webClientId.");
+                 Alert.alert("Configuration Error", "Google Sign-In failed. Please check your Firebase configuration (SHA-1 fingerprint and Web Client ID).");
+             }
+             throw error;
          }
-         
-         const googleCredential = GoogleAuthProvider.credential(idToken);
-         await signInWithCredential(auth, googleCredential);
-         */
       }
     } catch (error) {
       console.error("Google Sign In Error", error);
@@ -100,10 +105,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const signInWithApple = async () => {
      try {
-         // NOTE: Apple Sign-In requires native module rebuilding.
-         // Temporarily disabled to prevent crashes until rebuild.
-         throw new Error("Please rebuild the app to use Apple Sign-In.");
-         /*
          const rawNonce = Math.random().toString(36).substring(2, 10);
          const requestedScopes = [
            AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
@@ -120,7 +121,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
            nonce: nonce,
          });
      
-         const { identityToken, authorizationCode } = appleCredential;
+         const { identityToken } = appleCredential;
      
          if (!identityToken) {
            throw new Error('Apple Sign-In failed - no identify token returned');
@@ -133,7 +134,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
          });
      
          await signInWithCredential(auth, credential);
-         */
      } catch (error: any) {
          if (error.code === 'ERR_REQUEST_CANCELED') {
               console.log('User canceled Apple Sign-In');

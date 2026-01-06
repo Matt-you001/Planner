@@ -23,6 +23,8 @@ const STORAGE_KEYS = {
   SYSTEMS: '@endinmind:systems',
 };
 
+import { HABIT_THRESHOLDS, HabitStage } from './types';
+
 // In-memory store that syncs with AsyncStorage
 class PersistentStore {
   goals: WithId<Goal>[] = [];
@@ -114,6 +116,21 @@ class PersistentStore {
     this.systems.push(newSystem);
     await this.save();
     return newSystem;
+  }
+
+  async addNote(goalId: string, note: { content: string, date: string }) {
+    await this.init();
+    const goal = this.goals.find(g => g.id === goalId);
+    if (goal) {
+        if (!goal.notes) goal.notes = [];
+        goal.notes.unshift({
+            id: `note-${Date.now()}`,
+            content: note.content,
+            date: note.date,
+            createdAt: new Date().toISOString()
+        });
+        await this.save();
+    }
   }
 
   async deleteGoal(id: string) {
@@ -443,6 +460,47 @@ export const DataService = {
         console.warn("Create system failed, using local store", e);
         return localStore.addSystem(systemData);
     }
+  },
+
+  async addNote(userId: string, goalId: string, content: string) {
+    const noteData = {
+        content,
+        date: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+    };
+
+    if (this.isDemoMode()) {
+        return localStore.addNote(goalId, noteData);
+    }
+
+    try {
+        // In Firestore, we can store notes as a subcollection of the goal
+        await addDoc(collection(firestore, 'users', userId, 'goals', goalId, 'notes'), {
+            ...noteData,
+            createdAt: serverTimestamp()
+        });
+    } catch (e) {
+        console.warn("Add note failed, using local store", e);
+        return localStore.addNote(goalId, noteData);
+    }
+  },
+
+  async getHabitStage(userId: string, goalId: string): Promise<{ stage: HabitStage; completedCount: number }> {
+    const systems = await this.getSystems(userId, goalId);
+    
+    // We count unique DAYS where at least one system was completed.
+    const completedSystems = systems.filter(s => s.isCompleted);
+    const uniqueDays = new Set(completedSystems.map(s => s.date)).size;
+    
+    const count = uniqueDays; 
+
+    let stage: HabitStage = 'Intention';
+    if (count >= HABIT_THRESHOLDS.Identity) stage = 'Identity';
+    else if (count >= HABIT_THRESHOLDS.Automaticity) stage = 'Automaticity';
+    else if (count >= HABIT_THRESHOLDS.Repetition) stage = 'Repetition';
+    else if (count >= HABIT_THRESHOLDS.Experimentation) stage = 'Experimentation';
+
+    return { stage, completedCount: count };
   },
 
   async checkConflict(userId: string, date: string, startTime: string, endTime: string): Promise<boolean> {

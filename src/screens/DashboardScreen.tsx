@@ -9,7 +9,7 @@ import type { System, Task, WithId } from '../lib/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DataService } from '../lib/DataService';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Plus, X, Calendar, CheckSquare, LogOut } from 'lucide-react-native';
+import { Plus, X, Calendar, CheckSquare, LogOut, Layers, ClipboardList, Clock, Zap } from 'lucide-react-native';
 import { useCelebration } from '../context/CelebrationContext';
 
 type Action = WithId<System> | WithId<Task>;
@@ -24,6 +24,8 @@ export default function DashboardScreen() {
   const [systems, setSystems] = useState<System[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isModalVisible, setModalVisible] = useState(false);
+  // Secondary state for "Create a Plan" sub-selection
+  const [showCreatePlanOptions, setShowCreatePlanOptions] = useState(false);
 
   // Track which apps we've already auto-opened this session
   const openedActionsRef = useRef<Set<string>>(new Set());
@@ -53,6 +55,23 @@ export default function DashboardScreen() {
       if (dateComparison !== 0) return dateComparison;
       return (a.startTime || '23:59').localeCompare(b.startTime || '23:59');
     });
+  }, [systems, tasks]);
+
+  const dailyProgress = useMemo(() => {
+    const allActions = [...(systems || []), ...(tasks || [])];
+    if (allActions.length === 0) return { percentage: 0, message: "No activities today" };
+    
+    const completed = allActions.filter(a => a.isCompleted).length;
+    const percentage = Math.round((completed / allActions.length) * 100);
+    
+    let message = "Let's start!";
+    if (percentage > 0 && percentage <= 25) message = "Good start!";
+    else if (percentage > 25 && percentage <= 50) message = "Making progress!";
+    else if (percentage > 50 && percentage <= 75) message = "Keep going!";
+    else if (percentage > 75 && percentage < 100) message = "Almost there!";
+    else if (percentage === 100) message = "Excellent! All done!";
+    
+    return { percentage, message };
   }, [systems, tasks]);
 
   // Handle notification response (Background/Foreground tap)
@@ -165,6 +184,21 @@ export default function DashboardScreen() {
         </TouchableOpacity>
       </View>
 
+      {/* Daily Progress Tracker */}
+      <View className="px-4 pt-4 pb-2">
+        <View className="mb-2 flex-row justify-between items-center">
+            <Text className="text-sm font-bold text-gray-700">Daily Progress</Text>
+            <Text className="text-xs font-medium text-sky-600">{dailyProgress.message}</Text>
+        </View>
+        <View className="h-4 w-full rounded-full bg-gray-200 overflow-hidden">
+            <View 
+                className="h-full bg-sky-500 rounded-full" 
+                style={{ width: `${dailyProgress.percentage}%` }} 
+            />
+        </View>
+        <Text className="mt-1 text-right text-xs text-gray-500">{dailyProgress.percentage}%</Text>
+      </View>
+
       <ScrollView 
         className="flex-1 px-4 pt-4"
         refreshControl={
@@ -195,44 +229,81 @@ export default function DashboardScreen() {
         visible={isModalVisible}
         transparent
         animationType="fade"
-        onRequestClose={() => setModalVisible(false)}
+        onRequestClose={() => {
+            setModalVisible(false);
+            setShowCreatePlanOptions(false);
+        }}
       >
         <View className="flex-1 justify-center bg-black/50 p-4">
             <View className="rounded-lg bg-white p-6 shadow-lg">
                 <View className="mb-4 flex-row items-center justify-between">
                     <Text className="text-lg font-bold">Create New</Text>
-                    <TouchableOpacity onPress={() => setModalVisible(false)}>
+                    <TouchableOpacity onPress={() => {
+                        setModalVisible(false);
+                        setShowCreatePlanOptions(false);
+                    }}>
                         <X size={24} color="gray" />
                     </TouchableOpacity>
                 </View>
                 
                 <Text className="mb-6 text-gray-500">
-                    Make a new plan to achieve a long-term goal, or set a simple one-time task.
+                    {showCreatePlanOptions 
+                        ? "Choose how you want to plan your day." 
+                        : "Build a habit to achieve a long-term goal, or create a plan for today."}
                 </Text>
 
-                <View className="flex-row gap-4">
-                    <TouchableOpacity 
-                        className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
-                        onPress={() => {
-                            setModalVisible(false);
-                            navigation.navigate('CreatePlan');
-                        }}
-                    >
-                        <Calendar size={32} color="#0ea5e9" className="mb-2" />
-                        <Text className="font-semibold text-gray-900">Make a Plan</Text>
-                    </TouchableOpacity>
+                {showCreatePlanOptions ? (
+                    // Sub-Options for "Create a Plan"
+                    <View className="flex-row gap-4">
+                        <TouchableOpacity 
+                            className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
+                            onPress={() => {
+                                setModalVisible(false);
+                                setShowCreatePlanOptions(false);
+                                navigation.navigate('CreatePlan', { type: 'isolate' });
+                            }}
+                        >
+                            <ClipboardList size={32} color="#0ea5e9" className="mb-2" />
+                            <Text className="font-semibold text-gray-900 text-center">Create Plan</Text>
+                            <Text className="text-xs text-gray-400 text-center mt-1">(Isolate Activities)</Text>
+                        </TouchableOpacity>
 
-                    <TouchableOpacity 
-                        className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
-                        onPress={() => {
-                            setModalVisible(false);
-                            navigation.navigate('CreateTask');
-                        }}
-                    >
-                        <CheckSquare size={32} color="#0ea5e9" className="mb-2" />
-                        <Text className="font-semibold text-gray-900">Set a Task</Text>
-                    </TouchableOpacity>
-                </View>
+                        <TouchableOpacity 
+                            className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
+                            onPress={() => {
+                                setModalVisible(false);
+                                setShowCreatePlanOptions(false);
+                                navigation.navigate('CreateTask');
+                            }}
+                        >
+                            <Clock size={32} color="#0ea5e9" className="mb-2" />
+                            <Text className="font-semibold text-gray-900 text-center">Set Reminder</Text>
+                            <Text className="text-xs text-gray-400 text-center mt-1">(One-time Task)</Text>
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    // Main Options
+                    <View className="flex-row gap-4">
+                        <TouchableOpacity 
+                            className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
+                            onPress={() => {
+                                setModalVisible(false);
+                                navigation.navigate('CreatePlan', { type: 'habit' });
+                            }}
+                        >
+                            <Zap size={32} color="#0ea5e9" className="mb-2" />
+                            <Text className="font-semibold text-gray-900 text-center">Build a Habit</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity 
+                            className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
+                            onPress={() => setShowCreatePlanOptions(true)}
+                        >
+                            <Calendar size={32} color="#0ea5e9" className="mb-2" />
+                            <Text className="font-semibold text-gray-900 text-center">Create a Plan</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         </View>
       </Modal>

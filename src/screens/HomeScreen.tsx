@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, TextInput, Modal, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, TextInput, Modal, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import { ArrowRight, Layout, Mail, Lock, X, LogIn, User as UserIcon, Apple, Settings } from 'lucide-react-native';
@@ -155,12 +155,16 @@ export default function HomeScreen() {
       <View className="items-center mb-10 w-full relative">
 
         {/* Logo */}
-        <View className="bg-sky-500 p-6 rounded-3xl mb-6 shadow-lg shadow-sky-200">
-            <Layout size={64} color="white" />
+        <View className="mb-6 shadow-lg shadow-sky-200">
+            <Image 
+                source={require('../../assets/icon.png')} 
+                style={{ width: 120, height: 120 }} 
+                resizeMode="contain"
+            />
         </View>
         
         <Text className="text-4xl font-extrabold text-gray-900 mb-2 tracking-tight">
-          The Planner
+          PlanApp
         </Text>
         
         <Text className="text-center text-lg text-gray-500 leading-7 max-w-xs mb-8">

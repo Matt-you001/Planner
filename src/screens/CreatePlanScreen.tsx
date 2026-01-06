@@ -1,21 +1,41 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { ArrowLeft, Calendar as CalendarIcon, ChevronDown } from 'lucide-react-native';
 import { DataService } from '../lib/DataService';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { Goal } from '../lib/types';
 
-const suggestedCategories = ['Health', 'Career', 'Learning', 'Finance', 'Relationships', 'Personal'];
+const habitCategories = ['Health & Fitness', 'Skill Building', 'Mindfulness', 'Routine', 'Productivity', 'Wellness'];
+const planCategories = ['Career', 'Finance', 'Education', 'Project', 'Travel', 'Personal'];
 
 export default function CreatePlanScreen() {
   const navigation = useNavigation<any>();
+  const route = useRoute<any>();
+  const { type } = route.params || { type: 'habit' }; // Default to 'habit' if undefined, though dashboard should pass it
   const { user } = useAuth();
   
   const [title, setTitle] = useState('');
   const [category, setCategory] = useState('');
   const [isCustomCategory, setIsCustomCategory] = useState(false);
+  const suggestedCategories = type === 'habit' ? habitCategories : planCategories;
+  
+  // Link to Plan (for Habit flow)
+  const [existingPlans, setExistingPlans] = useState<Goal[]>([]);
+  const [linkedPlanId, setLinkedPlanId] = useState<string | undefined>(undefined);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+
+  // Load existing plans on mount
+  React.useEffect(() => {
+    if (user && type === 'habit') {
+        DataService.getGoals(user.uid).then(goals => {
+            // Filter only goals that are NOT habits themselves (optional logic, but usually good)
+            setExistingPlans(goals);
+        });
+    }
+  }, [user, type]);
   
   // Date states
   const [startDate, setStartDate] = useState(new Date());
@@ -37,15 +57,27 @@ export default function CreatePlanScreen() {
         progress: 0,
         startDate: startDate.toISOString().split('T')[0],
         targetDate: targetDate ? targetDate.toISOString().split('T')[0] : undefined,
+        linkedPlanId: type === 'habit' ? linkedPlanId : undefined // Save the link
       });
-      // Replace the current screen with PlanSetup so back button goes to PlansList
-      // Pass startDate so subsequent screens can use it as default
-      navigation.replace('PlanSetup', { 
-          goalId: newGoal.id, 
-          goalTitle: newGoal.title,
-          startDate: startDate.toISOString(),
-          targetDate: targetDate ? targetDate.toISOString() : undefined
-      });
+      // Navigate based on flow type
+      if (type === 'isolate') {
+          navigation.replace('PlanIsolate', { 
+              goalId: newGoal.id, 
+              goalTitle: newGoal.title,
+              startDate: startDate.toISOString(),
+              targetDate: targetDate ? targetDate.toISOString() : undefined,
+              initialSelectedDate: startDate.toISOString()
+          });
+      } else {
+          // Default to Habit Stack ('habit')
+          navigation.replace('PlanStack', { 
+              goalId: newGoal.id, 
+              goalTitle: newGoal.title,
+              startDate: startDate.toISOString(),
+              targetDate: targetDate ? targetDate.toISOString() : undefined,
+              initialSelectedDate: startDate.toISOString()
+          });
+      }
     } catch (error) {
       console.error("Error creating plan:", error);
       navigation.goBack();
@@ -101,23 +133,52 @@ export default function CreatePlanScreen() {
         <TouchableOpacity onPress={() => navigation.goBack()} className="mr-4">
           <ArrowLeft size={24} color="black" />
         </TouchableOpacity>
-        <Text className="text-lg font-bold text-gray-900">Make a Plan</Text>
+        <Text className="text-lg font-bold text-gray-900">
+            {type === 'habit' ? 'Build a Habit' : 'Create a Plan'}
+        </Text>
       </View>
 
       <ScrollView className="flex-1 p-4">
         <Text className="mb-6 text-center text-sm text-gray-500">
-            Define the ultimate outcome or identity you want to achieve with this plan.
+            {type === 'habit' 
+                ? "Define the goal for your new habit stack." 
+                : "Define the goal you want to achieve with this plan."}
         </Text>
 
         <View className="mb-4">
-          <Text className="mb-2 text-sm font-medium text-gray-700">Plan Title</Text>
+          <Text className="mb-2 text-sm font-medium text-gray-700">
+              {type === 'habit' ? 'Habit Title' : 'Plan Title'}
+          </Text>
           <TextInput
             className="rounded-lg border border-gray-300 p-3 text-base"
-            placeholder="e.g. Become a proficient writer"
+            placeholder={type === 'habit' ? "e.g. Morning Run" : "e.g. Become a proficient writer"}
             value={title}
             onChangeText={setTitle}
           />
         </View>
+
+        {/* Link to Plan (Optional, Habit only) */}
+        {type === 'habit' && existingPlans.length > 0 && (
+             <View className="mb-4">
+                <Text className="mb-2 text-sm font-medium text-gray-700">Link to a Plan (Optional)</Text>
+                <TouchableOpacity 
+                    className="flex-row items-center justify-between rounded-lg border border-gray-300 p-3"
+                    onPress={() => setShowPlanPicker(true)}
+                >
+                    <Text className={`text-base ${linkedPlanId ? 'text-gray-900' : 'text-gray-400'}`}>
+                        {linkedPlanId 
+                            ? existingPlans.find(p => p.id === linkedPlanId)?.title 
+                            : "Select a plan to support"}
+                    </Text>
+                    <ChevronDown size={20} color="gray" />
+                </TouchableOpacity>
+                {linkedPlanId && (
+                    <TouchableOpacity onPress={() => setLinkedPlanId(undefined)} className="mt-1 self-end">
+                        <Text className="text-xs text-red-500">Clear Link</Text>
+                    </TouchableOpacity>
+                )}
+             </View>
+        )}
 
         <View className="mb-4">
           <Text className="mb-2 text-sm font-medium text-gray-700">Category</Text>
@@ -184,7 +245,9 @@ export default function CreatePlanScreen() {
           {isSubmitting ? (
             <ActivityIndicator color="white" />
           ) : (
-            <Text className="text-base font-bold text-white">Let's Start a Plan</Text>
+            <Text className="text-base font-bold text-white">
+                {type === 'habit' ? "Next: Stack Habits" : "Next: Isolate Activities"}
+            </Text>
           )}
         </TouchableOpacity>
       </ScrollView>
@@ -218,6 +281,38 @@ export default function CreatePlanScreen() {
                 >
                     <Text className="text-center text-base font-bold text-sky-600">Create Custom...</Text>
                 </TouchableOpacity>
+            </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Plan Selection Modal */}
+      <Modal
+        visible={showPlanPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPlanPicker(false)}
+      >
+        <TouchableOpacity 
+            className="flex-1 justify-end bg-black/50" 
+            activeOpacity={1} 
+            onPress={() => setShowPlanPicker(false)}
+        >
+            <View className="bg-white rounded-t-xl p-4" style={{ maxHeight: '60%' }}>
+                <Text className="mb-4 text-center text-lg font-bold text-gray-900">Select a Plan</Text>
+                <ScrollView>
+                    {existingPlans.map(plan => (
+                        <TouchableOpacity 
+                            key={plan.id} 
+                            className="border-b border-gray-100 py-4"
+                            onPress={() => {
+                                setLinkedPlanId(plan.id);
+                                setShowPlanPicker(false);
+                            }}
+                        >
+                            <Text className="text-center text-base text-gray-800">{plan.title}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </ScrollView>
             </View>
         </TouchableOpacity>
       </Modal>

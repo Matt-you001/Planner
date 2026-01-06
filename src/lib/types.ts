@@ -23,6 +23,18 @@ export type Goal = {
   createdAt: string; // ISO String
   startDate?: string; // "YYYY-MM-DD"
   targetDate?: string; // "YYYY-MM-DD"
+  linkedPlanId?: string; // For habits linked to a parent plan
+  notes?: { id: string; content: string; date: string; createdAt: string }[];
+};
+
+export type HabitStage = 'Intention' | 'Experimentation' | 'Repetition' | 'Automaticity' | 'Identity';
+
+export const HABIT_THRESHOLDS = {
+    Intention: 0,
+    Experimentation: 1,
+    Repetition: 7,
+    Automaticity: 21,
+    Identity: 66
 };
 
 // A "System" is a planned, time-blocked activity for a specific day, linked to a goal.
