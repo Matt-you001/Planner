@@ -15,6 +15,7 @@ import PlanSetupScreen from './src/screens/PlanSetupScreen';
 import PlanIsolateScreen from './src/screens/PlanIsolateScreen';
 import PlanStackScreen from './src/screens/PlanStackScreen';
 import AiCoachScreen from './src/screens/AiCoachScreen';
+import ReviewYesterdayScreen from './src/screens/ReviewYesterdayScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
 import * as Notifications from 'expo-notifications';
 import { launchApp } from './src/services/InstalledApps';
@@ -92,16 +93,58 @@ function TabNavigator() {
 
 export default function App() {
   useEffect(() => {
+      // Define Notification Categories (Action Buttons)
+      Notifications.setNotificationCategoryAsync('linked-app-reminder', [
+          {
+              identifier: 'ACCEPT',
+              buttonTitle: 'Open App',
+              options: { opensAppToForeground: true }, // Bring app to front to handle logic
+          },
+          {
+              identifier: 'DISMISS',
+              buttonTitle: 'Dismiss',
+              options: { isDestructive: true },
+          },
+      ]);
+
+      Notifications.setNotificationCategoryAsync('default-reminder', [
+          {
+              identifier: 'DISMISS',
+              buttonTitle: 'Dismiss',
+              options: { isDestructive: true },
+          },
+      ]);
+  }, []);
+
+  useEffect(() => {
+    // Request permissions on app start
+    async function requestPermissions() {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus !== 'granted') {
+        console.log('Failed to get push token for push notification!');
+        return;
+      }
+    }
+    requestPermissions();
+
     // Global Notification Listener
-    const subscription = Notifications.addNotificationResponseReceivedListener(response => {
+    const subscription = Notifications.addNotificationResponseReceivedListener(async response => {
       const linkedApp = response.notification.request.content.data?.linkedApp;
       const actionIdentifier = response.actionIdentifier;
+
+      // Always dismiss the notification first
+      await Notifications.dismissNotificationAsync(response.notification.request.identifier);
 
       if (linkedApp) {
         console.log(`[Global] Notification interaction: ${actionIdentifier}`);
         
         // Handle "Open App" button click OR regular body tap
-        if (actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER || actionIdentifier === 'OPEN_APP') {
+        if (actionIdentifier === Notifications.DEFAULT_ACTION_IDENTIFIER || actionIdentifier === 'ACCEPT') {
              // 1. Try Native Launch (Package Name)
             if (Platform.OS === 'android' && !linkedApp.includes(':')) {
                 const launched = launchApp(linkedApp);
@@ -110,31 +153,9 @@ export default function App() {
 
             // 2. Try Deep Link
             Linking.openURL(linkedApp).catch(err => console.warn('Failed to open linked app', err));
-        } else if (actionIdentifier === 'DISMISS') {
-            // Dismiss action (Notification closes automatically)
-            Notifications.dismissNotificationAsync(response.notification.request.identifier);
-            // Launch linked app even on dismiss as requested by user ("If an app is linked, upon selection of 'Dismiss' launch open the linked app")
-            // Wait, logic check: Usually Dismiss means "Ignore". 
-            // User requirement: "upon selection of 'Dismiss' launch open the linked app" -> This contradicts standard UX but I will implement as requested.
-            
-            // Re-evaluating User Request: "if an app is linked, give the user two buttons to select whether to accept opening the linked app or to ignore(exit)"
-            // AND "If an app is linked, upon selection of 'Dismiss' launch open the linked app." -> This seems like a typo in the user prompt or a specific request.
-            // Let's re-read carefully: "Do not let the notification to auto exit the screen... until user selects 'Dismiss' If an app is linked to the activity, upon selection of 'Dismiss' launch open the linked app."
-            // This sounds like "Dismiss" should ACTUALLY open the app? Or maybe "Dismiss" means "Close notification AND Open App"?
-            // Or maybe the user meant "Upon selection of 'Open App', launch app. Upon 'Dismiss', just exit".
-            // Let's look at the previous prompt: "give the user two buttons to select whether to accept opening the linked app or to ignore(exit)".
-            // This implies: Open App -> Launches. Dismiss -> Exits (Ignores).
-            
-            // However, the LATEST prompt says: "upon selection of 'Dismiss' launch open the linked app."
-            // I will implement exactly what is written in the latest prompt, even if unusual.
-            
-            if (Platform.OS === 'android' && !linkedApp.includes(':')) {
-                const launched = launchApp(linkedApp);
-                if (launched) return;
-            }
-            Linking.openURL(linkedApp).catch(err => console.warn('Failed to open linked app', err));
         }
       }
+      // If actionIdentifier is 'DISMISS', it's already dismissed by the dismissNotificationAsync above (or by system)
     });
 
     return () => subscription.remove();
@@ -169,6 +190,7 @@ export default function App() {
             <RootStack.Screen name="PlanIsolate" component={PlanIsolateScreen} />
             <RootStack.Screen name="PlanStack" component={PlanStackScreen} />
             <RootStack.Screen name="GoalDetails" component={GoalDetailsScreen} />
+            <RootStack.Screen name="ReviewYesterday" component={ReviewYesterdayScreen} />
             <RootStack.Screen name="AiCoach" component={AiCoachScreen} />
             <RootStack.Screen name="Settings" component={SettingsScreen} />
           </RootStack.Navigator>

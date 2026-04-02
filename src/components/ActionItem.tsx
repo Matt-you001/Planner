@@ -112,30 +112,32 @@ export default function ActionItem({ action, onActionChange, onDelete }: ActionI
                     </Pressable>
                 )}
              </View>
-             
-             {onDelete && (
-                <TouchableOpacity onPress={onDelete} className="p-1">
-                    <Trash2 size={16} color="#ef4444" />
-                </TouchableOpacity>
-             )}
            </View>
         </View>
 
-        {/* Done/Missed Buttons (Moved to Right) */}
-        <View className="flex-row gap-2 mt-1">
-            <TouchableOpacity 
-                onPress={handleDone}
-                className={`p-1.5 rounded-full border ${isDone ? 'bg-green-500 border-green-500' : 'bg-transparent border-gray-300'}`}
-            >
-                <Check size={16} color={isDone ? 'white' : '#9ca3af'} />
-            </TouchableOpacity>
+        {/* Right Column: Buttons & Delete */}
+        <View className="items-end">
+             <View className="flex-row gap-2 mt-1">
+                <TouchableOpacity 
+                    onPress={handleDone}
+                    className={`px-3 py-1.5 rounded-full border ${isDone ? 'bg-green-500 border-green-500' : 'bg-transparent border-gray-300'}`}
+                >
+                    <Text className={`text-xs font-bold ${isDone ? 'text-white' : 'text-gray-500'}`}>Done</Text>
+                </TouchableOpacity>
 
-            <TouchableOpacity 
-                onPress={handleMissed}
-                className={`p-1.5 rounded-full border ${isMissed ? 'bg-red-500 border-red-500' : 'bg-transparent border-gray-300'}`}
-            >
-                <X size={16} color={isMissed ? 'white' : '#9ca3af'} />
-            </TouchableOpacity>
+                <TouchableOpacity 
+                    onPress={handleMissed}
+                    className={`px-3 py-1.5 rounded-full border ${isMissed ? 'bg-red-500 border-red-500' : 'bg-transparent border-gray-300'}`}
+                >
+                    <Text className={`text-xs font-bold ${isMissed ? 'text-white' : 'text-gray-500'}`}>Missed</Text>
+                </TouchableOpacity>
+            </View>
+
+             {onDelete && (
+                <TouchableOpacity onPress={onDelete} className="p-2 mt-2">
+                    <Trash2 size={18} color="#ef4444" />
+                </TouchableOpacity>
+             )}
         </View>
       </View>
     </View>

@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, Switch, Platform, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
-import { LogOut, Bell, User, Volume2, ArrowLeft, Zap } from 'lucide-react-native';
+import { LogOut, Bell, User, Volume2, ArrowLeft, Zap, Moon } from 'lucide-react-native';
 import { useNavigation } from '@react-navigation/native';
 import * as Notifications from 'expo-notifications';
 
@@ -12,6 +12,7 @@ export default function SettingsScreen() {
   
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [vibrationEnabled, setVibrationEnabled] = useState(true);
+  const [eveningReviewEnabled, setEveningReviewEnabled] = useState(true);
 
   const handleLogout = () => {
     Alert.alert(
@@ -24,17 +25,37 @@ export default function SettingsScreen() {
     );
   };
 
-  const updateNotificationChannel = async () => {
-    if (Platform.OS !== 'android') return;
-
-    // We can update the channel configuration here
-    // Note: Once a channel is created, some settings (like importance) cannot be lowered by the app, only by the user.
-    // But we can update sound/vibration logic if we use different channel IDs or delete/recreate (not recommended).
-    // For now, this is a visual toggle that would ideally update a persistent store (AsyncStorage) 
-    // that NotificationService reads from before scheduling.
-    
-    // For this MVP, we will just show an alert that settings are saved locally.
-    Alert.alert("Settings Saved", "Your notification preferences have been updated.");
+  const toggleEveningReview = async (value: boolean) => {
+    setEveningReviewEnabled(value);
+    if (value) {
+        // Schedule reminders
+        try {
+            await Notifications.scheduleNotificationAsync({
+                content: { title: "Review your day", body: "How did today go? Take a moment to track your progress.", data: { screen: 'Dashboard' } },
+                trigger: { 
+                    type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                    hour: 22, 
+                    minute: 0, 
+                },
+            });
+            await Notifications.scheduleNotificationAsync({
+                content: { title: "Last chance to review", body: "Don't break your streak! Mark today's activities.", data: { screen: 'Dashboard' } },
+                trigger: { 
+                    type: Notifications.SchedulableTriggerInputTypes.DAILY,
+                    hour: 23, 
+                    minute: 50, 
+                },
+            });
+            Alert.alert("Reminders Set", "You will be reminded at 10:00 PM and 11:50 PM to review your day.");
+        } catch (e) {
+            console.warn("Failed to schedule evening reminders", e);
+            Alert.alert("Error", "Could not schedule reminders. Please check permissions.");
+        }
+    } else {
+        // Cancel all (simulated by just not scheduling new ones, usually we'd track IDs)
+        await Notifications.cancelAllScheduledNotificationsAsync();
+        Alert.alert("Reminders Off", "Evening review reminders disabled.");
+    }
   };
 
   return (
@@ -84,6 +105,19 @@ export default function SettingsScreen() {
                     disabled={true} // Always on per requirements
                     trackColor={{ false: "#e5e7eb", true: "#bae6fd" }}
                     thumbColor={"#0ea5e9"}
+                />
+            </View>
+
+            <View className="flex-row items-center justify-between mb-4">
+                <View className="flex-row items-center">
+                    <Moon size={20} color="gray" className="mr-3" />
+                    <Text className="text-base text-gray-900">Evening Review (10pm)</Text>
+                </View>
+                <Switch 
+                    value={eveningReviewEnabled} 
+                    onValueChange={toggleEveningReview}
+                    trackColor={{ false: "#e5e7eb", true: "#bae6fd" }}
+                    thumbColor={eveningReviewEnabled ? "#0ea5e9" : "#f4f4f5"}
                 />
             </View>
 

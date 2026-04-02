@@ -54,8 +54,6 @@ export default function HomeScreen() {
       } else if (e.code === 'auth/popup-closed-by-user') {
           // User closed popup, no need to alert error
           console.log("User closed sign-in popup");
-      } else {
-          Alert.alert("Sign In Failed", e.message);
       }
     } finally {
       setIsSubmitting(false);
@@ -106,7 +104,20 @@ export default function HomeScreen() {
       if (e.code === 'auth/operation-not-allowed') {
           Alert.alert("Configuration Error", "Email/Password Sign-Up is not enabled in the Firebase Console. Please enable it in the Authentication > Sign-in method tab.");
       } else if (e.code === 'auth/email-already-in-use') {
-          Alert.alert("Sign Up Failed", "This email is already in use.");
+          // Alert.alert("Sign Up Failed", "This email is already in use.");
+          // Automatically try to log in instead
+          console.log("Email in use, attempting to login...");
+          try {
+              await signInWithEmail(email, password);
+              setShowSignUpModal(false);
+              navigation.navigate('Dashboard');
+          } catch (loginError: any) {
+              if (loginError.code === 'auth/invalid-credential') {
+                  Alert.alert("Account Exists", "This email is already registered, but the password you entered was incorrect. Please try again or reset your password.");
+              } else {
+                  Alert.alert("Login Failed", `Account exists but login failed: ${loginError.message}`);
+              }
+          }
       } else {
           Alert.alert("Sign Up Failed", e.message);
       }
@@ -199,20 +210,19 @@ export default function HomeScreen() {
             </View>
         ) : (
             <View className="w-full gap-4">
-                {/* Google Sign In */}
                 <TouchableOpacity 
                     className="w-full flex-row items-center justify-center bg-white border border-gray-300 py-4 px-6 rounded-xl active:bg-gray-50 shadow-sm"
                     onPress={handleGoogleSignIn}
                     disabled={isSubmitting}
                 >
-                    {/* Fake Google Icon (Text for now or use generic globe/layout) */}
                     <View className="mr-3">
                         <Text className="font-bold text-xl">G</Text>
                     </View>
-                    <Text className="text-gray-700 font-bold text-lg">Sign in with Google</Text>
+                    <Text className="text-gray-700 font-bold text-lg">Continue with Google</Text>
                 </TouchableOpacity>
 
                 {/* Apple Sign In - Only on iOS or if supported */}
+                {/* 
                 {Platform.OS === 'ios' && (
                     <TouchableOpacity 
                         className="w-full flex-row items-center justify-center bg-black border border-gray-300 py-4 px-6 rounded-xl active:opacity-80 shadow-sm"
@@ -222,7 +232,8 @@ export default function HomeScreen() {
                         <Apple size={24} color="white" className="mr-3" />
                         <Text className="text-white font-bold text-lg ml-2">Sign in with Apple</Text>
                     </TouchableOpacity>
-                )}
+                )} 
+                */}
 
                 <View className="flex-row items-center">
                     <View className="flex-1 h-[1px] bg-gray-200" />

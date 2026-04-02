@@ -14,11 +14,11 @@ const planCategories = ['Career', 'Finance', 'Education', 'Project', 'Travel', '
 export default function CreatePlanScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
-  const { type } = route.params || { type: 'habit' }; // Default to 'habit' if undefined, though dashboard should pass it
+  const { type, goalId, goalTitle, initialSelectedDate } = route.params || { type: 'habit' }; // Default to 'habit' if undefined, though dashboard should pass it
   const { user } = useAuth();
   
-  const [title, setTitle] = useState('');
-  const [category, setCategory] = useState('');
+  const [title, setTitle] = useState(goalTitle || '');
+  const [category, setCategory] = useState(goalId ? 'Existing Plan' : ''); // Dummy category if existing
   const [isCustomCategory, setIsCustomCategory] = useState(false);
   const suggestedCategories = type === 'habit' ? habitCategories : planCategories;
   
@@ -27,18 +27,14 @@ export default function CreatePlanScreen() {
   const [linkedPlanId, setLinkedPlanId] = useState<string | undefined>(undefined);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
 
-  // Load existing plans on mount
-  React.useEffect(() => {
-    if (user && type === 'habit') {
-        DataService.getGoals(user.uid).then(goals => {
-            // Filter only goals that are NOT habits themselves (optional logic, but usually good)
-            setExistingPlans(goals);
-        });
-    }
-  }, [user, type]);
+  // If goalId is passed (Adding to existing), we want to SKIP this setup screen entirely and jump to the next step.
+  // But React Navigation 'replace' might be tricky inside render/useEffect if not careful.
+  // Better approach: If goalId is present, we still render this screen but maybe auto-submit? 
+  // OR, we just let the user confirm the "Context" (Date) and then proceed.
+  // Actually, the user said: "plan's page should open up with the title and category preloaded. The user just needs to set the date and proceed"
   
   // Date states
-  const [startDate, setStartDate] = useState(new Date());
+  const [startDate, setStartDate] = useState(initialSelectedDate ? new Date(initialSelectedDate) : new Date());
   const [targetDate, setTargetDate] = useState<Date | undefined>(undefined);
   const [showStartPicker, setShowStartPicker] = useState(false);
   const [showTargetPicker, setShowTargetPicker] = useState(false);
@@ -47,23 +43,34 @@ export default function CreatePlanScreen() {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
 
   const handleCreate = async () => {
-    if (!title.trim() || !category.trim() || !user) return;
+    if (!title.trim() || !user) return; // Category is now optional
 
     setIsSubmitting(true);
     try {
-      const newGoal = await DataService.createGoal(user.uid, {
-        title: title.trim(),
-        category: category.trim(),
-        progress: 0,
-        startDate: startDate.toISOString().split('T')[0],
-        targetDate: targetDate ? targetDate.toISOString().split('T')[0] : undefined,
-        linkedPlanId: type === 'habit' ? linkedPlanId : undefined // Save the link
-      });
+      let finalGoalId = goalId;
+      let finalGoalTitle = title.trim();
+
+      // Only create a NEW goal if we don't have one passed in
+      if (!finalGoalId) {
+          const newGoal = await DataService.createGoal(user.uid, {
+            title: finalGoalTitle,
+            category: category.trim() || 'General', // Default if empty
+            progress: 0,
+            startDate: startDate.toISOString().split('T')[0],
+            targetDate: targetDate ? targetDate.toISOString().split('T')[0] : undefined,
+            linkedPlanId: type === 'habit' ? linkedPlanId : undefined 
+          });
+          finalGoalId = newGoal.id;
+      } else {
+          // If adding to existing, we might want to update the goal's date range if the new task is outside it?
+          // Or just proceed. For now, just proceed using the existing ID.
+      }
+
       // Navigate based on flow type
       if (type === 'isolate') {
           navigation.replace('PlanIsolate', { 
-              goalId: newGoal.id, 
-              goalTitle: newGoal.title,
+              goalId: finalGoalId, 
+              goalTitle: finalGoalTitle,
               startDate: startDate.toISOString(),
               targetDate: targetDate ? targetDate.toISOString() : undefined,
               initialSelectedDate: startDate.toISOString()
@@ -71,15 +78,15 @@ export default function CreatePlanScreen() {
       } else {
           // Default to Habit Stack ('habit')
           navigation.replace('PlanStack', { 
-              goalId: newGoal.id, 
-              goalTitle: newGoal.title,
+              goalId: finalGoalId, 
+              goalTitle: finalGoalTitle,
               startDate: startDate.toISOString(),
               targetDate: targetDate ? targetDate.toISOString() : undefined,
               initialSelectedDate: startDate.toISOString()
           });
       }
     } catch (error) {
-      console.error("Error creating plan:", error);
+      console.error("Error creating/navigating plan:", error);
       navigation.goBack();
     } finally {
       setIsSubmitting(false);
@@ -264,7 +271,7 @@ export default function CreatePlanScreen() {
             activeOpacity={1} 
             onPress={() => setShowCategoryModal(false)}
         >
-            <View className="bg-white rounded-t-xl p-4">
+            <View className="bg-white rounded-t-xl p-4 pb-10">
                 <Text className="mb-4 text-center text-lg font-bold text-gray-900">Select Category</Text>
                 {suggestedCategories.map(cat => (
                     <TouchableOpacity 
@@ -276,7 +283,7 @@ export default function CreatePlanScreen() {
                     </TouchableOpacity>
                 ))}
                 <TouchableOpacity 
-                    className="py-4"
+                    className="py-4 mb-4"
                     onPress={() => handleCategorySelect('Custom')}
                 >
                     <Text className="text-center text-base font-bold text-sky-600">Create Custom...</Text>

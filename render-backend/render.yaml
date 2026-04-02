@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: planner-ai-backend
+    runtime: node
+    rootDir: render-backend
+    buildCommand: npm install
+    startCommand: npm start
+    plan: free
+    envVars:
+      - key: OPENAI_MODEL
+        value: gpt-5-mini

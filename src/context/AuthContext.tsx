@@ -2,29 +2,22 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { 
   User, 
   onAuthStateChanged, 
-  signInAnonymously, 
   GoogleAuthProvider, 
-  signInWithPopup,
-  createUserWithEmailAndPassword,
-  signInWithEmailAndPassword,
-  signOut,
-  sendPasswordResetEmail,
-  updateProfile,
-  signInWithCredential,
-  OAuthProvider
+  signInWithPopup, 
+  createUserWithEmailAndPassword, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  sendPasswordResetEmail, 
+  updateProfile, 
+  signInWithCredential
 } from 'firebase/auth';
 import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase/index';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
-import * as AppleAuthentication from 'expo-apple-authentication';
-import * as Crypto from 'expo-crypto';
+// import * as AppleAuthentication from 'expo-apple-authentication';
 
-// Initialize Google Sign-In
-// IMPORTANT: Replace 'YOUR_WEB_CLIENT_ID' with the actual Web Client ID from Firebase Console -> Authentication -> Google
-GoogleSignin.configure({
-   webClientId: '1081960231146-12en6go2743j8tq496kem93hi26g4tbd.apps.googleusercontent.com', 
-});
+const GOOGLE_WEB_CLIENT_ID = '1081960231146-12en6go2743j8tq496kem93hi26g4tbd.apps.googleusercontent.com';
 
 interface AuthContextType {
   user: User | null;
@@ -58,6 +51,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [subscriptionTier, setSubscriptionTier] = useState<'free' | 'premium'>('free');
 
   useEffect(() => {
+    GoogleSignin.configure({
+      webClientId: GOOGLE_WEB_CLIENT_ID,
+    });
+  }, []);
+
+  useEffect(() => {
     // Load subscription status from storage
     AsyncStorage.getItem('subscriptionTier').then(val => {
         if (val === 'premium') setSubscriptionTier('premium');
@@ -77,33 +76,35 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const provider = new GoogleAuthProvider();
         await signInWithPopup(auth, provider);
       } else {
-         try {
-             await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-             const signInResult = await GoogleSignin.signIn();
-             let idToken = signInResult.data?.idToken || signInResult.idToken;
-             
-             if (!idToken) {
-                 throw new Error('No ID token found');
-             }
-             
-             const googleCredential = GoogleAuthProvider.credential(idToken);
-             await signInWithCredential(auth, googleCredential);
-         } catch (error: any) {
-             if (error.code === '12500') {
-                 // 12500: SIGN_IN_FAILED - usually missing SHA-1 or wrong webClientId
-                 console.error("Google Sign-In 12500 Error: Check SHA-1 in Firebase Console and webClientId.");
-                 Alert.alert("Configuration Error", "Google Sign-In failed. Please check your Firebase configuration (SHA-1 fingerprint and Web Client ID).");
-             }
-             throw error;
-         }
+        await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+        const signInResult = await GoogleSignin.signIn();
+        const idToken = signInResult.data?.idToken || signInResult.idToken;
+
+        if (!idToken) {
+          throw new Error('No ID token found');
+        }
+
+        const googleCredential = GoogleAuthProvider.credential(idToken);
+        await signInWithCredential(auth, googleCredential);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Google Sign In Error", error);
+
+      if (error?.code === '12500' || error?.message?.includes('DEVELOPER_ERROR')) {
+        Alert.alert(
+          "Configuration Error",
+          "Google Sign-In needs a valid Firebase/Google setup. Check the Android SHA certificate and Web Client ID."
+        );
+      } else if (error?.code !== 'SIGN_IN_CANCELLED') {
+        Alert.alert("Sign In Failed", error?.message || "Google Sign-In failed.");
+      }
+
       throw error;
     }
   };
 
   const signInWithApple = async () => {
+     /*
      try {
          const rawNonce = Math.random().toString(36).substring(2, 10);
          const requestedScopes = [
@@ -142,6 +143,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               throw error;
          }
      }
+     */
+     Alert.alert("Not Available", "Apple Sign-In is currently disabled.");
    };
 
   const signUpWithEmail = async (email: string, pass: string, name?: string) => {
@@ -181,6 +184,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = async () => {
     try {
+      if (Platform.OS !== 'web') {
+        await GoogleSignin.signOut();
+      }
       await signOut(auth);
       setUser(null);
     } catch (error) {
@@ -195,6 +201,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // unless we decide that's the desired "Guest" behavior.
     // For now, let's wait for onAuthStateChanged to resolve existing session.
     
+    // Ensure persistence is handled correctly (React Native uses AsyncStorage by default with Firebase JS SDK)
+    // No explicit call needed usually, but good to know onAuthStateChanged handles it.
+
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (!mounted) return;
       

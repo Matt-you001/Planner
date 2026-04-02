@@ -7,14 +7,13 @@ import {
   query, 
   where, 
   orderBy, 
-  limit, 
   serverTimestamp, 
   getDoc,
-  deleteDoc
+  deleteDoc,
+  Timestamp
 } from 'firebase/firestore';
 import { firestore, auth } from '../firebase';
-import { MOCK_GOALS, MOCK_TASKS, MOCK_SYSTEMS, MOCK_USER } from './mockData';
-import type { Goal, Task, System, WithId } from './types';
+import type { Goal, Task, System, WithId, JournalEntry, JournalMood } from './types';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const STORAGE_KEYS = {
@@ -24,6 +23,46 @@ const STORAGE_KEYS = {
 };
 
 import { HABIT_THRESHOLDS, HabitStage } from './types';
+import * as Notifications from 'expo-notifications';
+
+const toIsoString = (value: any): string | undefined => {
+  if (!value) return undefined;
+  if (typeof value === 'string') return value;
+  if (value instanceof Timestamp) return value.toDate().toISOString();
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+  if (value instanceof Date) return value.toISOString();
+  return undefined;
+};
+
+const normalizeGoal = (id: string, data: any): WithId<Goal> => ({
+  ...data,
+  id,
+  createdAt: toIsoString(data.createdAt) || new Date().toISOString(),
+  startDate: typeof data.startDate === 'string' ? data.startDate : toIsoString(data.startDate)?.split('T')[0],
+  targetDate: typeof data.targetDate === 'string' ? data.targetDate : toIsoString(data.targetDate)?.split('T')[0],
+  notes: Array.isArray(data.notes) ? data.notes : undefined,
+});
+
+const normalizeTask = (id: string, data: any): WithId<Task> => ({
+  ...data,
+  id,
+  createdAt: toIsoString(data.createdAt) || new Date().toISOString(),
+});
+
+const normalizeSystem = (id: string, data: any): WithId<System> => ({
+  ...data,
+  id,
+  createdAt: toIsoString(data.createdAt) || new Date().toISOString(),
+});
+
+const normalizeJournalEntry = (id: string, data: any): JournalEntry => ({
+  id,
+  content: data.content || '',
+  date: typeof data.date === 'string' ? data.date : (toIsoString(data.date)?.split('T')[0] || new Date().toISOString().split('T')[0]),
+  createdAt: toIsoString(data.createdAt) || new Date().toISOString(),
+  mood: data.mood,
+  progress: typeof data.progress === 'number' ? data.progress : undefined,
+});
 
 // In-memory store that syncs with AsyncStorage
 class PersistentStore {
@@ -118,7 +157,7 @@ class PersistentStore {
     return newSystem;
   }
 
-  async addNote(goalId: string, note: { content: string, date: string }) {
+  async addNote(goalId: string, note: { content: string; date: string; mood?: JournalMood; progress?: number }) {
     await this.init();
     const goal = this.goals.find(g => g.id === goalId);
     if (goal) {
@@ -127,7 +166,9 @@ class PersistentStore {
             id: `note-${Date.now()}`,
             content: note.content,
             date: note.date,
-            createdAt: new Date().toISOString()
+            createdAt: new Date().toISOString(),
+            mood: note.mood,
+            progress: note.progress
         });
         await this.save();
     }
@@ -158,16 +199,68 @@ class PersistentStore {
 export const localStore = new PersistentStore();
 
 export const DataService = {
+  async getGoalNotes(userId: string, goalId: string): Promise<JournalEntry[]> {
+    if (this.isDemoMode()) {
+      await localStore.init();
+      return localStore.goals.find(g => g.id === goalId)?.notes || [];
+    }
+
+    try {
+      const notesQuery = query(
+        collection(firestore, 'users', userId, 'goals', goalId, 'notes'),
+        orderBy('createdAt', 'desc')
+      );
+      const notesSnap = await getDocs(notesQuery);
+      return notesSnap.docs.map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data()));
+    } catch (e) {
+      console.warn("Fetch goal notes failed, using local store", e);
+      await localStore.init();
+      return localStore.goals.find(g => g.id === goalId)?.notes || [];
+    }
+  },
+
   // Check if we are using the real backend or fallback
   isDemoMode: () => {
     // If auth is null, we are definitely in demo/offline mode
     if (!auth.currentUser) return true;
     // If the user is our explicit mock user
     if (auth.currentUser.uid === 'mock-user-123') return true;
-    
-    // NOTE: For now, FORCE demo mode if we can't connect to Firestore to ensure app is usable.
-    // In production, we'd check network status.
-    return true; 
+
+    return false; 
+  },
+
+  // Helper to schedule notification for a task/system
+  async scheduleReminder(item: WithId<Task> | WithId<System>) {
+    if (!item.date || !item.startTime) return;
+    if (item.alarm === false) return;
+    if (item.notificationId) return;
+
+    const [hours, minutes] = item.startTime.split(':').map(Number);
+    const triggerDate = new Date(item.date);
+    triggerDate.setHours(hours, minutes, 0, 0);
+
+    // If date is in past, don't schedule
+    if (triggerDate.getTime() < Date.now()) return;
+
+    const categoryId = item.linkedApp ? 'linked-app-reminder' : 'default-reminder';
+
+    try {
+        await Notifications.scheduleNotificationAsync({
+            content: {
+                title: item.title,
+                body: `It's time to ${item.title}`,
+                data: { linkedApp: item.linkedApp },
+                categoryIdentifier: categoryId, // 'linked-app-reminder' has 'Accept' action
+            },
+            trigger: {
+                type: Notifications.SchedulableTriggerInputTypes.DATE, // Explicitly set trigger type
+                date: triggerDate, // Use 'date' property for specific timestamp
+            },
+        });
+        console.log(`Scheduled reminder for ${item.title} at ${triggerDate}`);
+    } catch (e) {
+        console.warn("Failed to schedule notification", e);
+    }
   },
 
   // --- GOALS ---
@@ -183,7 +276,14 @@ export const DataService = {
         orderBy('createdAt', 'desc')
       );
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ ...d.data(), id: d.id } as WithId<Goal>));
+      const goals = snap.docs.map(d => normalizeGoal(d.id, d.data()));
+      const goalsWithNotes = await Promise.all(
+        goals.map(async goal => ({
+          ...goal,
+          notes: await this.getGoalNotes(userId, goal.id)
+        }))
+      );
+      return goalsWithNotes;
     } catch (e) {
       console.warn("Fetch goals failed, using local store", e);
       await localStore.init();
@@ -198,7 +298,11 @@ export const DataService = {
     }
     try {
       const snap = await getDoc(doc(firestore, 'users', userId, 'goals', goalId));
-      if (snap.exists()) return { ...snap.data(), id: snap.id } as WithId<Goal>;
+      if (snap.exists()) {
+        const goal = normalizeGoal(snap.id, snap.data());
+        const notes = await this.getGoalNotes(userId, goalId);
+        return { ...goal, notes };
+      }
       return null;
     } catch (e) {
       await localStore.init();
@@ -269,7 +373,7 @@ export const DataService = {
       
       const q = query(collection(firestore, 'users', userId, 'tasks'), ...constraints);
       const snap = await getDocs(q);
-      return snap.docs.map(d => ({ ...d.data(), id: d.id } as WithId<Task>));
+      return snap.docs.map(d => normalizeTask(d.id, d.data()));
     } catch (e) {
       console.warn("Fetch tasks failed, using local store", e);
       await localStore.init();
@@ -290,7 +394,9 @@ export const DataService = {
     };
 
     if (this.isDemoMode()) {
-      return localStore.addTask(taskData);
+      const added = await localStore.addTask(taskData);
+      await this.scheduleReminder(added);
+      return added;
     }
 
     try {
@@ -298,10 +404,14 @@ export const DataService = {
         ...taskData,
         createdAt: serverTimestamp()
       });
-      return { ...taskData, id: ref.id };
+      const added = { ...taskData, id: ref.id };
+      await this.scheduleReminder(added);
+      return added;
     } catch (e) {
       console.warn("Create task failed, using local store", e);
-      return localStore.addTask(taskData);
+      const added = await localStore.addTask(taskData);
+      await this.scheduleReminder(added);
+      return added;
     }
   },
 
@@ -311,11 +421,12 @@ export const DataService = {
       updatedTask = await localStore.updateTask(taskId, updates);
     } else {
       try {
+        const taskRef = doc(firestore, 'users', userId, 'tasks', taskId);
+        const existingSnap = await getDoc(taskRef);
         await updateDoc(doc(firestore, 'users', userId, 'tasks', taskId), updates);
-        // We'd need to refetch to get the full object or just assume success with optimistic updates
-        // For simplicity here, we'll assume we can construct it if needed, but in this specific flow 
-        // we might rely on the calling code. However, to calc progress we need the goalId.
-        // Let's assume we need to fetch it if we were real.
+        if (existingSnap.exists()) {
+          updatedTask = normalizeTask(existingSnap.id, { ...existingSnap.data(), ...updates });
+        }
       } catch (e) {
         updatedTask = await localStore.updateTask(taskId, updates);
       }
@@ -324,12 +435,6 @@ export const DataService = {
     // After updating task, recalculate goal progress if goalId is present
     if (updatedTask && updatedTask.goalId) {
         await this.calculateGoalProgress(userId, updatedTask.goalId);
-    } else if (!this.isDemoMode() && !updatedTask) {
-       // If real DB, we need to fetch the task to get the goalId to update progress
-       // This part is complex without a full fetch. For now, we will rely on localStore or assume passed updates has goalId? 
-       // updates usually doesn't have goalId. 
-       // Implementation detail: In a real app, use a Cloud Function trigger for this. 
-       // Here, we will try to find the task in our local cache or just skip for real DB (Cloud Function should handle it).
     }
 
     return true;
@@ -367,7 +472,7 @@ export const DataService = {
         
         const q = query(collection(firestore, 'users', userId, 'systems'), ...constraints);
         const snap = await getDocs(q);
-        return snap.docs.map(d => ({ ...d.data(), id: d.id } as WithId<System>));
+        return snap.docs.map(d => normalizeSystem(d.id, d.data()));
       } catch (e) {
         console.warn("Fetch systems failed, using local store", e);
         await localStore.init();
@@ -385,7 +490,12 @@ export const DataService = {
       updatedSystem = await localStore.updateSystem(systemId, updates);
     } else {
         try {
-          await updateDoc(doc(firestore, 'users', userId, 'systems', systemId), updates);
+          const systemRef = doc(firestore, 'users', userId, 'systems', systemId);
+          const existingSnap = await getDoc(systemRef);
+          await updateDoc(systemRef, updates);
+          if (existingSnap.exists()) {
+            updatedSystem = normalizeSystem(existingSnap.id, { ...existingSnap.data(), ...updates });
+          }
         } catch (e) {
           updatedSystem = await localStore.updateSystem(systemId, updates);
         }
@@ -419,7 +529,10 @@ export const DataService = {
     const allItems = [...tasks, ...systems];
     if (allItems.length === 0) return 0;
 
-    const completedCount = allItems.filter(i => i.isCompleted).length;
+    // Fix 1: Exclude "missed" activities from "completed" count
+    // "Missed" means isCompleted=true AND successPercentage < 50
+    // "Done" means isCompleted=true AND successPercentage >= 50
+    const completedCount = allItems.filter(i => i.isCompleted && (i.successPercentage || 0) >= 50).length;
     const progress = Math.round((completedCount / allItems.length) * 100);
 
     // 2. Update the goal
@@ -447,7 +560,9 @@ export const DataService = {
     };
 
     if (this.isDemoMode()) {
-        return localStore.addSystem(systemData);
+        const added = await localStore.addSystem(systemData);
+        await this.scheduleReminder(added);
+        return added;
     }
 
     try {
@@ -455,18 +570,30 @@ export const DataService = {
             ...systemData,
             createdAt: serverTimestamp()
         });
-        return { ...systemData, id: ref.id };
+        const added = { ...systemData, id: ref.id };
+        await this.scheduleReminder(added);
+        return added;
     } catch (e) {
         console.warn("Create system failed, using local store", e);
-        return localStore.addSystem(systemData);
+        const added = await localStore.addSystem(systemData);
+        await this.scheduleReminder(added);
+        return added;
     }
   },
 
-  async addNote(userId: string, goalId: string, content: string) {
-    const noteData = {
-        content,
-        date: new Date().toISOString(),
-        createdAt: new Date().toISOString()
+  async addNote(
+    userId: string,
+    goalId: string,
+    entry: { content: string; date?: string; mood?: JournalMood; progress?: number } | string
+  ) {
+    const noteData: Omit<JournalEntry, 'id'> = {
+        content: typeof entry === 'string' ? entry : entry.content,
+        date: typeof entry === 'string'
+          ? new Date().toISOString().split('T')[0]
+          : (entry.date || new Date().toISOString().split('T')[0]),
+        createdAt: new Date().toISOString(),
+        mood: typeof entry === 'string' ? undefined : entry.mood,
+        progress: typeof entry === 'string' ? undefined : entry.progress
     };
 
     if (this.isDemoMode()) {
@@ -474,11 +601,14 @@ export const DataService = {
     }
 
     try {
-        // In Firestore, we can store notes as a subcollection of the goal
-        await addDoc(collection(firestore, 'users', userId, 'goals', goalId, 'notes'), {
+        const noteRef = await addDoc(collection(firestore, 'users', userId, 'goals', goalId, 'notes'), {
             ...noteData,
             createdAt: serverTimestamp()
         });
+        return {
+          ...noteData,
+          id: noteRef.id
+        };
     } catch (e) {
         console.warn("Add note failed, using local store", e);
         return localStore.addNote(goalId, noteData);
@@ -525,4 +655,3 @@ export const DataService = {
       });
   }
 };
-

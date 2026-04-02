@@ -37,6 +37,11 @@ export default function GoalCard({ goal }: GoalCardProps) {
         </View>
       </View>
 
+      <View className="mb-4 flex-row items-center justify-between rounded-lg bg-amber-50 px-3 py-2">
+        <Text className="text-xs font-semibold text-amber-800">Journal Entries</Text>
+        <Text className="text-xs font-bold text-amber-700">{goal.notes?.length || 0}</Text>
+      </View>
+
       <View className="mb-5">
         <View className="mb-1 flex-row justify-between">
             <Text className="text-sm font-medium text-gray-600">Success Rate</Text>

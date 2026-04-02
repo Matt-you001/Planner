@@ -13,6 +13,17 @@ export interface CustomRepeatConfig {
 
 export type WithId<T> = T & { id: string };
 
+export type JournalMood = 'Great' | 'Good' | 'Okay' | 'Hard';
+
+export type JournalEntry = {
+  id: string;
+  content: string;
+  date: string; // "YYYY-MM-DD"
+  createdAt: string; // ISO String
+  mood?: JournalMood;
+  progress?: number; // 0-100 self-reported progress for this entry
+};
+
 // A Goal is now a "Plan"
 export type Goal = {
   userId: string;
@@ -24,7 +35,7 @@ export type Goal = {
   startDate?: string; // "YYYY-MM-DD"
   targetDate?: string; // "YYYY-MM-DD"
   linkedPlanId?: string; // For habits linked to a parent plan
-  notes?: { id: string; content: string; date: string; createdAt: string }[];
+  notes?: JournalEntry[];
 };
 
 export type HabitStage = 'Intention' | 'Experimentation' | 'Repetition' | 'Automaticity' | 'Identity';

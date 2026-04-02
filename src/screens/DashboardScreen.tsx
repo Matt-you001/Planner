@@ -61,8 +61,12 @@ export default function DashboardScreen() {
     const allActions = [...(systems || []), ...(tasks || [])];
     if (allActions.length === 0) return { percentage: 0, message: "No activities today" };
     
-    const completed = allActions.filter(a => a.isCompleted).length;
-    const percentage = Math.round((completed / allActions.length) * 100);
+    // Fix 1: Exclude "missed" activities (successPercentage < 50) from "completed" count
+    // "Missed" means isCompleted=true AND successPercentage=0 (or <50)
+    // "Done" means isCompleted=true AND successPercentage >= 50
+    const successful = allActions.filter(a => a.isCompleted && (a.successPercentage || 0) >= 50).length;
+    
+    const percentage = Math.round((successful / allActions.length) * 100);
     
     let message = "Let's start!";
     if (percentage > 0 && percentage <= 25) message = "Good start!";
@@ -188,6 +192,9 @@ export default function DashboardScreen() {
       <View className="px-4 pt-4 pb-2">
         <View className="mb-2 flex-row justify-between items-center">
             <Text className="text-sm font-bold text-gray-700">Daily Progress</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('ReviewYesterday')}> 
+                <Text className="text-xs font-medium text-sky-600 underline">Review Yesterday</Text>
+            </TouchableOpacity>
             <Text className="text-xs font-medium text-sky-600">{dailyProgress.message}</Text>
         </View>
         <View className="h-4 w-full rounded-full bg-gray-200 overflow-hidden">

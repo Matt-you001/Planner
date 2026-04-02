@@ -1,13 +1,14 @@
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { format, addDays, subDays, isToday } from 'date-fns';
-import { ChevronLeft, ChevronRight, ArrowLeft, Plus, X, Trash2, FileText, StickyNote, Award } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, ArrowLeft, Plus, X, Trash2, FileText, Award, BookOpen } from 'lucide-react-native';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
+import Slider from '@react-native-community/slider';
 import ActionItem from '../components/ActionItem';
-import { Goal, Task, System, WithId, HabitStage, HABIT_THRESHOLDS } from '../lib/types';
+import { Goal, Task, System, WithId, HabitStage, HABIT_THRESHOLDS, JournalEntry, JournalMood } from '../lib/types';
 import { DataService } from '../lib/DataService';
 
 export default function GoalDetailsScreen() {
@@ -32,20 +33,22 @@ export default function GoalDetailsScreen() {
   // Notes State
   const [isNoteModalVisible, setNoteModalVisible] = useState(false);
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [noteMood, setNoteMood] = useState<JournalMood>('Good');
+  const [noteProgress, setNoteProgress] = useState(50);
   const [isAddingNote, setIsAddingNote] = useState(false);
 
   const dateString = format(selectedDate, 'yyyy-MM-dd');
+  const uid = user?.uid || 'mock-user-123';
 
   const loadData = useCallback(async () => {
-    if (!user) return;
     setLoading(true);
     
     // Fetch Goal
-    const fetchedGoal = await DataService.getGoal(user.uid, goalId);
+    const fetchedGoal = await DataService.getGoal(uid, goalId);
     setGoal(fetchedGoal);
 
     // Fetch Habit Stats
-    const stats = await DataService.getHabitStage(user.uid, goalId);
+    const stats = await DataService.getHabitStage(uid, goalId);
     setHabitStats(stats);
 
     // Fetch Actions based on View Mode
@@ -54,16 +57,16 @@ export default function GoalDetailsScreen() {
 
     if (viewMode === 'day') {
         [fetchedTasks, fetchedSystems] = await Promise.all([
-            DataService.getTasks(user.uid, goalId, dateString),
-            DataService.getSystems(user.uid, goalId, dateString)
+            DataService.getTasks(uid, goalId, dateString),
+            DataService.getSystems(uid, goalId, dateString)
         ]);
     } else {
         // For Week/Month, we might need a range query or client-side filter
         // Currently DataService.getTasks only supports specific date or all for goal
         // We'll fetch all for goal and filter locally for now (efficient enough for < 1000 items)
         const [allTasks, allSystems] = await Promise.all([
-            DataService.getTasks(user.uid, goalId),
-            DataService.getSystems(user.uid, goalId)
+            DataService.getTasks(uid, goalId),
+            DataService.getSystems(uid, goalId)
         ]);
 
         let start, end;
@@ -82,7 +85,7 @@ export default function GoalDetailsScreen() {
     setTasks(fetchedTasks);
     setSystems(fetchedSystems);
     setLoading(false);
-  }, [user, goalId, dateString, viewMode]);
+  }, [uid, goalId, dateString, viewMode, selectedDate]);
 
   useFocusEffect(
     useCallback(() => {
@@ -95,11 +98,42 @@ export default function GoalDetailsScreen() {
     return combined; 
   }, [systems, tasks]);
 
+  const journalEntries = useMemo(() => {
+    const entries = goal?.notes || [];
+
+    return entries.filter((entry: JournalEntry) => {
+      const entryDate = new Date(`${entry.date}T00:00:00`);
+
+      if (viewMode === 'day') {
+        return entry.date === dateString;
+      }
+
+      const interval = viewMode === 'week'
+        ? { start: startOfWeek(selectedDate), end: endOfWeek(selectedDate) }
+        : { start: startOfMonth(selectedDate), end: endOfMonth(selectedDate) };
+
+      return isWithinInterval(entryDate, interval);
+    });
+  }, [goal?.notes, viewMode, dateString, selectedDate]);
+
+  const journalSummary = useMemo(() => {
+    const entries = goal?.notes || [];
+    const averageProgress = entries.length
+      ? Math.round(entries.reduce((sum, entry) => sum + (entry.progress || 0), 0) / entries.length)
+      : 0;
+
+    return {
+      totalEntries: entries.length,
+      averageProgress,
+      latestEntry: entries[0]
+    };
+  }, [goal?.notes]);
+
   const handleAddTask = async () => {
-    if (!newTaskTitle.trim() || !user || !goal) return;
+    if (!newTaskTitle.trim() || !goal) return;
     setIsAddingTask(true);
     try {
-        await DataService.createTask(user.uid, {
+        await DataService.createTask(uid, {
             title: newTaskTitle.trim(),
             date: dateString,
             goalId: goalId,
@@ -116,17 +150,42 @@ export default function GoalDetailsScreen() {
   };
 
   const handleAddNote = async () => {
-    if (!newNoteContent.trim() || !user) return;
+    if (!newNoteContent.trim()) return;
     setIsAddingNote(true);
     try {
-        await DataService.addNote(user.uid, goalId, newNoteContent.trim());
+        await DataService.addNote(uid, goalId, {
+            content: newNoteContent.trim(),
+            date: dateString,
+            mood: noteMood,
+            progress: noteProgress
+        });
         setNewNoteContent('');
+        setNoteMood('Good');
+        setNoteProgress(50);
         setNoteModalVisible(false);
         loadData();
     } catch (e) {
         console.error("Failed to add note", e);
     } finally {
-        setIsAddingNote(false);
+      setIsAddingNote(false);
+    }
+  };
+
+  const handleActionChange = async (
+    action: WithId<System> | WithId<Task>,
+    newValues: { isCompleted?: boolean; successPercentage?: number }
+  ) => {
+    try {
+      if ('goalTitle' in action) {
+        setSystems(prev => prev.map(system => system.id === action.id ? { ...system, ...newValues } : system));
+        await DataService.updateSystem(uid, action.id, newValues);
+      } else {
+        setTasks(prev => prev.map(task => task.id === action.id ? { ...task, ...newValues } : task));
+        await DataService.updateTask(uid, action.id, newValues);
+      }
+      loadData();
+    } catch (e) {
+      console.error("Failed to update action", e);
     }
   };
 
@@ -144,14 +203,38 @@ export default function GoalDetailsScreen() {
   const handleNextDay = () => setSelectedDate(prev => addDays(prev, 1));
 
   const handleAddPlan = () => {
-    // Navigate to PlanSetupScreen with the currently selected date and goal info
-    // This ensures new activities are added to the existing plan for this specific day
-    navigation.navigate('PlanSetup', {
+    // Navigate based on goal type/category to the correct creation flow
+    // "Habit Stacker" (habit) vs "Create Plan" (isolate)
+    
+    // Heuristic: If category implies habit or we have explicit type. 
+    // Currently relying on 'category' or we can pass a type.
+    // Let's assume 'Habit' category or check goal structure.
+    // Or simpler: pass 'habit' if we want the habit stacker UI.
+    
+    // If the goal was created via "Build a Habit", we should probably continue adding habits.
+    // If via "Create Plan", we add tasks.
+    
+    // Check goal category or title keywords if we don't have explicit type
+    const isHabitGoal = goal.category === 'Habit' || goal.category === 'Health' || goal.category === 'Skill'; // Adjust logic as needed
+    
+    // BETTER APPROACH: Pass the type explicitly to CreatePlan
+    // If it's a "Habit" goal, open Habit Stacker.
+    // If it's a "Project/Plan", open Create Plan (Isolate).
+    
+    // For now, let's use the 'habit' flow if it looks like a habit, otherwise 'isolate'.
+    // Or just default to 'isolate' (Task) if it's a specific day? 
+    // The user said: "if it is a plan, open straight to the 'Create Plan' page... if it is a habit building set up... habit stacker page"
+    
+    // We'll map 'category' to type.
+    // If category is from the suggested list like 'Health', 'Skill', 'Morning Routine' -> Likely Habit
+    // If 'Work', 'Project', 'Custom' -> Could be Plan.
+    
+    // Let's pass the goal ID so the new item is attached to THIS goal.
+    navigation.navigate('CreatePlan', {
+        type: isHabitGoal ? 'habit' : 'isolate', // 'habit' opens Habit Stacker, 'isolate' opens Task/Plan creator
         goalId: goal.id,
         goalTitle: goal.title,
-        startDate: goal.startDate, // Pass the goal's start date
-        targetDate: goal.targetDate, // Pass the goal's target date
-        initialSelectedDate: format(selectedDate, 'yyyy-MM-dd') // Pass the currently viewed date
+        initialSelectedDate: format(selectedDate, 'yyyy-MM-dd')
     });
   };
 
@@ -165,9 +248,8 @@ export default function GoalDetailsScreen() {
                   text: "Delete", 
                   style: "destructive",
                   onPress: async () => {
-                      if (!user) return;
                       try {
-                          await DataService.deleteGoal(user.uid, goalId);
+                          await DataService.deleteGoal(uid, goalId);
                           navigation.goBack();
                       } catch (e) {
                           console.error("Failed to delete goal", e);
@@ -180,8 +262,6 @@ export default function GoalDetailsScreen() {
   };
 
   const handleDeleteAction = async (action: WithId<System> | WithId<Task>) => {
-      if (!user) return;
-      
       Alert.alert(
           "Delete Activity",
           "Are you sure you want to remove this activity?",
@@ -203,13 +283,13 @@ export default function GoalDetailsScreen() {
                              // We can use a property check.
                              const isSystem = 'repeat' in action || !('notes' in action); // Approximate
                              if (isSystem) {
-                                 await DataService.deleteSystem(user.uid, action.id);
+                                 await DataService.deleteSystem(uid, action.id);
                              } else {
-                                 await DataService.deleteTask(user.uid, action.id);
+                                 await DataService.deleteTask(uid, action.id);
                              }
                         } else {
                              // Fallback to Task
-                             await DataService.deleteTask(user.uid, action.id);
+                             await DataService.deleteTask(uid, action.id);
                         }
                         loadData();
                     } catch (e) {
@@ -333,7 +413,7 @@ export default function GoalDetailsScreen() {
                     <ActionItem 
                         key={action.id} 
                         action={action} 
-                        onActionChange={() => {}} 
+                        onActionChange={(newValues) => handleActionChange(action, newValues)} 
                         onDelete={() => handleDeleteAction(action)}
                     />
                 ))
@@ -346,17 +426,46 @@ export default function GoalDetailsScreen() {
 
          {/* Notes Section */}
          <View className="mb-20">
+            <View className="mb-4 rounded-xl border border-amber-100 bg-amber-50 p-4">
+                <View className="mb-2 flex-row items-center justify-between">
+                    <View className="flex-row items-center">
+                        <BookOpen size={18} color="#b45309" />
+                        <Text className="ml-2 text-sm font-bold text-amber-900">Journal Overview</Text>
+                    </View>
+                    <Text className="text-xs font-semibold text-amber-700">{journalSummary.totalEntries} entries</Text>
+                </View>
+                <Text className="text-xs text-amber-800">Average self-rated progress: {journalSummary.averageProgress}%</Text>
+                <Text className="mt-1 text-xs text-amber-700">
+                    {journalSummary.latestEntry
+                        ? `Latest entry: ${format(new Date(journalSummary.latestEntry.createdAt), 'MMM d, h:mm a')}`
+                        : 'No journal entries yet for this plan.'}
+                </Text>
+            </View>
+
             <View className="flex-row items-center justify-between mb-2">
-                <Text className="text-sm font-medium text-muted-foreground">Notes</Text>
+                <Text className="text-sm font-medium text-muted-foreground">Journal</Text>
                 <TouchableOpacity onPress={() => setNoteModalVisible(true)} className="flex-row items-center">
                     <Plus size={16} color="#0ea5e9" className="mr-1" />
-                    <Text className="text-sky-500 text-xs font-bold">Add Note</Text>
+                    <Text className="text-sky-500 text-xs font-bold">Add Entry</Text>
                 </TouchableOpacity>
             </View>
             
-            {goal.notes && goal.notes.length > 0 ? (
-                goal.notes.map((note, idx) => (
+            {journalEntries.length > 0 ? (
+                journalEntries.map((note, idx) => (
                     <View key={note.id || idx} className="mb-3 rounded-lg border border-gray-200 bg-white p-4">
+                        <View className="mb-2 flex-row items-center justify-between">
+                            <Text className="text-xs font-semibold text-sky-600">{note.date}</Text>
+                            <View className="flex-row items-center gap-2">
+                                {note.mood ? (
+                                    <View className="rounded-full bg-sky-50 px-2 py-1">
+                                        <Text className="text-[10px] font-bold uppercase text-sky-700">{note.mood}</Text>
+                                    </View>
+                                ) : null}
+                                {typeof note.progress === 'number' ? (
+                                    <Text className="text-xs font-semibold text-emerald-600">{note.progress}% progress</Text>
+                                ) : null}
+                            </View>
+                        </View>
                         <Text className="text-gray-900 mb-2">{note.content}</Text>
                         <Text className="text-xs text-gray-400">{format(new Date(note.createdAt), 'MMM d, h:mm a')}</Text>
                     </View>
@@ -364,7 +473,7 @@ export default function GoalDetailsScreen() {
             ) : (
                 <View className="items-center justify-center rounded-lg border border-gray-100 bg-gray-50 p-6">
                     <FileText size={24} color="#d1d5db" className="mb-2" />
-                    <Text className="text-gray-400 text-xs">No notes added yet.</Text>
+                    <Text className="text-gray-400 text-xs">No journal entries for this {viewMode} yet.</Text>
                 </View>
             )}
          </View>
@@ -419,21 +528,57 @@ export default function GoalDetailsScreen() {
         <View className="flex-1 justify-center bg-black/50 p-4">
             <View className="rounded-lg bg-white p-6 shadow-lg">
                 <View className="mb-4 flex-row items-center justify-between">
-                    <Text className="text-lg font-bold">Add Progress Note</Text>
+                    <Text className="text-lg font-bold">Add Journal Entry</Text>
                     <TouchableOpacity onPress={() => setNoteModalVisible(false)}>
                         <X size={24} color="gray" />
                     </TouchableOpacity>
                 </View>
+
+                <Text className="mb-3 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                    {viewMode === 'day' ? `For ${dateString}` : `Captured on ${dateString}`}
+                </Text>
+
+                <View className="mb-4">
+                    <Text className="mb-2 text-sm font-medium text-gray-700">How did this plan feel?</Text>
+                    <View className="flex-row gap-2">
+                        {(['Great', 'Good', 'Okay', 'Hard'] as JournalMood[]).map((mood) => (
+                            <TouchableOpacity
+                                key={mood}
+                                className={`rounded-full border px-3 py-2 ${noteMood === mood ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-white'}`}
+                                onPress={() => setNoteMood(mood)}
+                            >
+                                <Text className={`text-xs font-semibold ${noteMood === mood ? 'text-sky-700' : 'text-gray-600'}`}>{mood}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </View>
+                </View>
                 
                 <TextInput 
                     className="mb-4 rounded-md border border-gray-300 p-3 h-32"
-                    placeholder="Record your thoughts, challenges, or wins..."
+                    placeholder="Record wins, blockers, what changed, or what you want to remember next time..."
                     value={newNoteContent}
                     onChangeText={setNewNoteContent}
                     multiline
                     textAlignVertical="top"
                     autoFocus
                 />
+
+                <View className="mb-5 rounded-lg border border-gray-200 bg-gray-50 p-3">
+                    <View className="mb-2 flex-row items-center justify-between">
+                        <Text className="text-sm font-medium text-gray-700">Self-rated progress</Text>
+                        <Text className="text-sm font-bold text-emerald-600">{noteProgress}%</Text>
+                    </View>
+                    <Slider
+                        minimumValue={0}
+                        maximumValue={100}
+                        step={5}
+                        value={noteProgress}
+                        minimumTrackTintColor="#10b981"
+                        maximumTrackTintColor="#d1d5db"
+                        thumbTintColor="#10b981"
+                        onValueChange={(value) => setNoteProgress(value)}
+                    />
+                </View>
 
                 <TouchableOpacity 
                     className="items-center rounded-md bg-sky-500 p-3"
@@ -443,7 +588,7 @@ export default function GoalDetailsScreen() {
                     {isAddingNote ? (
                         <ActivityIndicator color="white" />
                     ) : (
-                        <Text className="font-bold text-white">Save Note</Text>
+                        <Text className="font-bold text-white">Save Entry</Text>
                     )}
                 </TouchableOpacity>
             </View>
