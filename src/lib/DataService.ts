@@ -317,6 +317,7 @@ export const DataService = {
       return [...localStore.goals]; // Return copy to force React update
     }
     try {
+      await localStore.init();
       const snap = await getDocs(collection(firestore, 'users', userId, 'goals'));
       const goals = snap.docs.map(d => normalizeGoal(d.id, d.data()));
       const goalsWithNotes = await Promise.all(
@@ -325,8 +326,12 @@ export const DataService = {
           notes: await this.getGoalNotes(userId, goal.id)
         }))
       );
-      const sortedGoals = goalsWithNotes.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
-      await localStore.init();
+      const mergedGoalsMap = new Map<string, WithId<Goal>>();
+      [...localStore.goals, ...goalsWithNotes].forEach(goal => {
+        mergedGoalsMap.set(goal.id, goal);
+      });
+      const mergedGoals = Array.from(mergedGoalsMap.values());
+      const sortedGoals = mergedGoals.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
       localStore.goals = [...sortedGoals];
       await localStore.save();
       return sortedGoals;
