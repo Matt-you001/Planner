@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { format } from 'date-fns';
-import { ArrowRight, CalendarPlus, PlusCircle } from 'lucide-react-native';
+import { ArrowRight, BookOpen, PlusCircle } from 'lucide-react-native';
 import type { Goal, WithId } from '../lib/types';
 import { styled } from 'nativewind';
 
@@ -55,10 +55,10 @@ export default function GoalCard({ goal }: GoalCardProps) {
         </View>
       </View>
 
-      <View className="flex-row gap-3">
+      <View className="flex-row gap-2">
           {/* Add to Plan Button - Goes to Plan Setup/Isolate */}
           <TouchableOpacity 
-              className="flex-1 flex-row items-center justify-center rounded-lg bg-sky-500 px-4 py-3 active:bg-sky-600"
+              className="flex-1 flex-row items-center justify-center rounded-lg bg-sky-500 px-3 py-3 active:bg-sky-600"
               onPress={() => navigation.navigate('PlanSetup', { 
                 goalId: goal.id, 
                 goalTitle: goal.title,
@@ -69,14 +69,22 @@ export default function GoalCard({ goal }: GoalCardProps) {
               <PlusCircle size={18} color="white" className="mr-2" />
               <Text className="font-bold text-white">Add to Plan</Text>
           </TouchableOpacity>
+
+          <TouchableOpacity 
+              className="flex-1 flex-row items-center justify-center rounded-lg bg-amber-500 px-3 py-3 active:bg-amber-600"
+              onPress={() => navigation.navigate('GoalDetails', { goalId: goal.id, openJournal: true })}
+          >
+              <BookOpen size={16} color="white" className="mr-2" />
+              <Text className="font-bold text-white">Add Journal</Text>
+          </TouchableOpacity>
           
           {/* View Details Button - Goes to Goal Details */}
           <TouchableOpacity 
-              className="flex-1 flex-row items-center justify-center rounded-lg border border-gray-300 bg-white px-4 py-3 active:bg-gray-50"
+              className="flex-1 flex-row items-center justify-center rounded-lg border border-gray-300 bg-white px-3 py-3 active:bg-gray-50"
               onPress={() => navigation.navigate('GoalDetails', { goalId: goal.id })}
           >
-              <Text className="font-semibold text-gray-700 mr-2">View Detail</Text>
-              <ArrowRight size={18} color="#374151" />
+              <Text className="font-semibold text-gray-700 mr-1 text-xs">View Detail</Text>
+              <ArrowRight size={16} color="#374151" />
           </TouchableOpacity>
       </View>
     </View>

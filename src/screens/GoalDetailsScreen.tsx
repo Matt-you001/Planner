@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, TextInput, Modal, Alert } from 'react-native';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -14,7 +14,7 @@ import { DataService } from '../lib/DataService';
 export default function GoalDetailsScreen() {
   const route = useRoute<any>();
   const navigation = useNavigation();
-  const { goalId } = route.params;
+  const { goalId, openJournal } = route.params;
   const { user } = useAuth();
   
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -92,6 +92,12 @@ export default function GoalDetailsScreen() {
         loadData();
     }, [loadData])
   );
+
+  useEffect(() => {
+    if (openJournal) {
+      setNoteModalVisible(true);
+    }
+  }, [openJournal]);
 
   const actions = useMemo(() => {
     const combined = [...(systems || []), ...(tasks || [])];

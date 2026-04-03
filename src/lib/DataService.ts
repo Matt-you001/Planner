@@ -348,13 +348,22 @@ export const DataService = {
       return localStore.goals.find(g => g.id === goalId) || null;
     }
     try {
+      await localStore.init();
       const snap = await getDoc(doc(firestore, 'users', userId, 'goals', goalId));
       if (snap.exists()) {
         const goal = normalizeGoal(snap.id, snap.data());
         const notes = await this.getGoalNotes(userId, goalId);
-        return { ...goal, notes };
+        const hydratedGoal = { ...goal, notes };
+        const existingIndex = localStore.goals.findIndex(localGoal => localGoal.id === goalId);
+        if (existingIndex >= 0) {
+          localStore.goals[existingIndex] = hydratedGoal;
+        } else {
+          localStore.goals.unshift(hydratedGoal);
+        }
+        await localStore.save();
+        return hydratedGoal;
       }
-      return null;
+      return localStore.goals.find(g => g.id === goalId) || null;
     } catch (e) {
       await localStore.init();
       return localStore.goals.find(g => g.id === goalId) || null;
