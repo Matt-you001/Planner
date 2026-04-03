@@ -337,7 +337,17 @@ export const DataService = {
       );
       const mergedGoalsMap = new Map<string, WithId<Goal>>();
       [...localStore.goals, ...goalsWithNotes].forEach(goal => {
-        mergedGoalsMap.set(goal.id, goal);
+        const existingGoal = mergedGoalsMap.get(goal.id);
+        if (!existingGoal) {
+          mergedGoalsMap.set(goal.id, goal);
+          return;
+        }
+
+        mergedGoalsMap.set(goal.id, {
+          ...existingGoal,
+          ...goal,
+          notes: (goal.notes && goal.notes.length > 0) ? goal.notes : existingGoal.notes,
+        });
       });
       const mergedGoals = Array.from(mergedGoalsMap.values());
       const sortedGoals = mergedGoals.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
