@@ -205,12 +205,8 @@ export const DataService = {
     }
 
     try {
-      const [linkedJournalSnap, legacyNotesSnap] = await Promise.all([
-        getDocs(query(
-          collection(firestore, 'users', userId, 'journals'),
-          where('goalId', '==', goalId),
-          orderBy('createdAt', 'desc')
-        )),
+      const [allJournalSnap, legacyNotesSnap] = await Promise.all([
+        getDocs(collection(firestore, 'users', userId, 'journals')),
         getDocs(query(
           collection(firestore, 'users', userId, 'goals', goalId, 'notes'),
           orderBy('createdAt', 'desc')
@@ -218,7 +214,9 @@ export const DataService = {
       ]);
 
       const combined = [
-        ...linkedJournalSnap.docs.map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data())),
+        ...allJournalSnap.docs
+          .map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data()))
+          .filter(entry => entry.goalId === goalId),
         ...legacyNotesSnap.docs.map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data()))
       ];
 
@@ -243,18 +241,17 @@ export const DataService = {
     }
 
     try {
-      const constraints: any[] = [];
-      if (date) {
-        constraints.push(where('date', '==', date));
-      }
-      constraints.push(orderBy('createdAt', 'desc'));
+      const journalsSnap = await getDocs(collection(firestore, 'users', userId, 'journals'));
+      const journals = journalsSnap.docs.map(journalDoc => normalizeJournalEntry(journalDoc.id, journalDoc.data()));
+      const filteredJournals = date
+        ? journals.filter(journal => journal.date === date)
+        : journals;
 
-      const journalsSnap = await getDocs(query(
-        collection(firestore, 'users', userId, 'journals'),
-        ...constraints
-      ));
-
-      return journalsSnap.docs.map(journalDoc => normalizeJournalEntry(journalDoc.id, journalDoc.data()));
+      const sortedJournals = filteredJournals.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      await localStore.init();
+      localStore.journals = [...sortedJournals];
+      await localStore.save();
+      return sortedJournals;
     } catch (e) {
       console.warn("Fetch journals failed, using local store", e);
       await localStore.init();
@@ -674,10 +671,20 @@ export const DataService = {
             ...noteData,
             createdAt: serverTimestamp()
         });
-        return {
+        const savedNote = {
           ...noteData,
           id: noteRef.id
         };
+        await localStore.init();
+        localStore.journals = [savedNote, ...localStore.journals.filter(note => note.id !== noteRef.id)];
+        const linkedGoalIndex = goalId ? localStore.goals.findIndex(goal => goal.id === goalId) : -1;
+        if (linkedGoalIndex >= 0) {
+          const goal = localStore.goals[linkedGoalIndex];
+          goal.notes = [savedNote, ...(goal.notes || []).filter(note => note.id !== noteRef.id)];
+          localStore.goals[linkedGoalIndex] = goal;
+        }
+        await localStore.save();
+        return savedNote;
     } catch (e) {
         console.warn("Add note failed, using local store", e);
         const savedNote = { ...noteData, id: `note-${Date.now()}` };
