@@ -167,6 +167,14 @@ class PersistentStore {
   async addNote(note: JournalEntry) {
     await this.init();
     this.journals.unshift(note);
+    if (note.goalId) {
+      const goalIndex = this.goals.findIndex(goal => goal.id === note.goalId);
+      if (goalIndex >= 0) {
+        const goal = this.goals[goalIndex];
+        goal.notes = [note, ...(goal.notes || []).filter(existingNote => existingNote.id !== note.id)];
+        this.goals[goalIndex] = goal;
+      }
+    }
     await this.save();
   }
 
@@ -311,7 +319,11 @@ export const DataService = {
   async getGoals(userId: string): Promise<WithId<Goal>[]> {
     if (this.isDemoMode()) {
       await localStore.init();
-      return [...localStore.goals]; // Return copy to force React update
+      return localStore.goals.map(goal => ({
+        ...goal,
+        notes: localStore.journals.filter(journal => journal.goalId === goal.id)
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      }));
     }
     try {
       await localStore.init();
@@ -342,7 +354,13 @@ export const DataService = {
   async getGoal(userId: string, goalId: string): Promise<WithId<Goal> | null> {
     if (this.isDemoMode()) {
       await localStore.init();
-      return localStore.goals.find(g => g.id === goalId) || null;
+      const goal = localStore.goals.find(g => g.id === goalId);
+      if (!goal) return null;
+      return {
+        ...goal,
+        notes: localStore.journals.filter(journal => journal.goalId === goalId)
+          .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      };
     }
     try {
       await localStore.init();
