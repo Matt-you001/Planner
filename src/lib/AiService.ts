@@ -78,6 +78,10 @@ async function callOnlineAi<T>(payload: OnlineAiPayload, schema: z.ZodSchema<T>)
 
 function localHabitStack(goalDescription: string): SuggestHabitStackOutput {
   const goal = goalDescription.toLowerCase();
+  const cleanGoal = goalDescription.trim();
+  const shortGoal = cleanGoal.replace(/^(to\s+)/i, '').replace(/\s+/g, ' ').trim();
+  const startsWithActionVerb = /^(build|create|launch|start|finish|learn|study|write|exercise|train|save|budget|design|plan|practice|read|improve|grow|cook|clean|organize|develop)\b/i.test(shortGoal);
+  const goalAction = startsWithActionVerb ? shortGoal : `work on ${shortGoal}`;
 
   if (goal.includes('health') || goal.includes('fit') || goal.includes('weight') || goal.includes('run') || goal.includes('exercise')) {
     return {
@@ -124,16 +128,36 @@ function localHabitStack(goalDescription: string): SuggestHabitStackOutput {
     };
   }
 
+  if (goal.includes('build') || goal.includes('house') || goal.includes('project') || goal.includes('launch')) {
+    return {
+      trigger: { title: "After I sit down for my focused work block", description: "Use a repeatable work session as the cue." },
+      response: { title: `Review the next milestone for ${shortGoal}`, description: "Start by getting clear on the next concrete step." },
+      stacked: { title: "Complete one small planning or execution task", description: "Momentum grows when the next move is specific and doable." },
+      reward: { title: "Record what moved forward before taking a break", description: "Noticing progress makes the habit easier to repeat." }
+    };
+  }
+
+  if (goal.includes('business') || goal.includes('brand') || goal.includes('client') || goal.includes('sales')) {
+    return {
+      trigger: { title: "After I open my workspace in the morning", description: "Anchor the habit to the start of the workday." },
+      response: { title: "Do one action that grows visibility or revenue", description: "Tie the habit directly to business progress." },
+      stacked: { title: "Follow up on one pending lead or task", description: "Keep momentum moving with one quick follow-through." },
+      reward: { title: "Update my progress tracker and take a short reset", description: "A visible win makes it easier to return tomorrow." }
+    };
+  }
+
   return {
-    trigger: { title: "After I [Current Habit]", description: "Identify a reliable daily anchor." },
-    response: { title: "Do [Small Version of Goal]", description: "Make it easy to start." },
-    stacked: { title: "Do [Related Quick Task]", description: "Build momentum." },
-    reward: { title: "Enjoy [Simple Treat]", description: "Immediate gratification." }
+    trigger: { title: "After I finish my first routine task of the day", description: "Use an anchor that already happens consistently." },
+    response: { title: `${goalAction.charAt(0).toUpperCase()}${goalAction.slice(1)} for 10 focused minutes`, description: "A short, repeatable version of the goal is easier to sustain." },
+    stacked: { title: `Prepare the next step for ${shortGoal}`, description: "Lining up tomorrow's next move keeps the habit alive." },
+    reward: { title: "Mark the session complete and take a short break", description: "A quick reward helps reinforce consistency." }
   };
 }
 
 function localHabitList(goalDescription: string): string[] {
   const goal = goalDescription.toLowerCase();
+  const cleanGoal = goalDescription.trim();
+  const shortGoal = cleanGoal.replace(/^(to\s+)/i, '').replace(/\s+/g, ' ').trim();
 
   if (goal.includes('health') || goal.includes('fit') || goal.includes('run')) {
     return [
@@ -165,12 +189,52 @@ function localHabitList(goalDescription: string): string[] {
     ];
   }
 
+  if (goal.includes('build') || goal.includes('house')) {
+    return [
+      "List the next 3 milestones and choose the one you can start this week",
+      "Research one contractor, permit, material, or cost decision that is blocking progress",
+      "Create or update a simple budget for the next phase of the project",
+      "Make one call or send one message that moves the house project forward",
+      "Review the plan at the end of the day and note what changed"
+    ];
+  }
+
+  if (goal.includes('business') || goal.includes('brand') || goal.includes('startup')) {
+    return [
+      "Identify the single most important outcome for the business this week",
+      "Reach out to one potential customer, partner, or mentor",
+      "Spend 20 minutes improving one part of your offer or product",
+      "Review what generated traction recently and double down on it",
+      "Write down one risk, one opportunity, and one next action"
+    ];
+  }
+
+  if (goal.includes('learn') || goal.includes('study') || goal.includes('exam') || goal.includes('course')) {
+    return [
+      "Review one concept you already know before starting something new",
+      "Study for 20 focused minutes with notifications turned off",
+      "Write down 3 key takeaways from today's learning session",
+      "Test yourself with 5 quick questions instead of only rereading notes",
+      "Prepare the exact topic you will study next"
+    ];
+  }
+
+  if (goal.includes('design') || goal.includes('ui') || goal.includes('ux')) {
+    return [
+      "Collect 3 strong references before starting a design session",
+      "Redesign one screen or component with a single clear improvement goal",
+      "Write down why the design should feel better for the user",
+      "Ask for one round of feedback on a focused design choice",
+      "Review your work and capture one lesson before ending the session"
+    ];
+  }
+
   return [
-    `Spend 5 minutes planning for ${goalDescription}`,
-    `Do one small task related to ${goalDescription}`,
-    `Read about how to improve at ${goalDescription}`,
-    "Track progress in a journal",
-    "Visualise success for 2 minutes"
+    `Define the next concrete milestone for ${shortGoal}`,
+    `Do one focused task that makes ${shortGoal} move forward today`,
+    `Prepare the tools, materials, or notes you need for the next session`,
+    `Review what is blocking progress on ${shortGoal} and remove one obstacle`,
+    "Capture one short note about what worked before you stop"
   ];
 }
 
