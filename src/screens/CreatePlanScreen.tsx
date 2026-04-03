@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Calendar as CalendarIcon, ChevronDown } from 'lucide-react-native';
+import { ArrowLeft, Calendar as CalendarIcon, ChevronDown, Sparkles } from 'lucide-react-native';
 import { DataService } from '../lib/DataService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Goal } from '../lib/types';
+import { AiService, SuggestHabitStackOutput } from '../lib/AiService';
 
 const habitCategories = ['Health & Fitness', 'Skill Building', 'Mindfulness', 'Routine', 'Productivity', 'Wellness'];
 const planCategories = ['Career', 'Finance', 'Education', 'Project', 'Travel', 'Personal'];
@@ -26,6 +27,10 @@ export default function CreatePlanScreen() {
   const [existingPlans, setExistingPlans] = useState<Goal[]>([]);
   const [linkedPlanId, setLinkedPlanId] = useState<string | undefined>(undefined);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiPlanSuggestions, setAiPlanSuggestions] = useState<string[]>([]);
+  const [aiHabitStack, setAiHabitStack] = useState<SuggestHabitStackOutput | null>(null);
+  const aiRequestIdRef = useRef(0);
 
   // If goalId is passed (Adding to existing), we want to SKIP this setup screen entirely and jump to the next step.
   // But React Navigation 'replace' might be tricky inside render/useEffect if not careful.
@@ -41,6 +46,67 @@ export default function CreatePlanScreen() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+
+  useEffect(() => {
+    if (!user || type !== 'habit') return;
+
+    let isCancelled = false;
+
+    const loadExistingPlans = async () => {
+      try {
+        const plans = await DataService.getGoals(user.uid);
+        if (!isCancelled) {
+          setExistingPlans(plans.filter(plan => !plan.archived));
+        }
+      } catch (error) {
+        console.error('Failed to load plans for linking', error);
+      }
+    };
+
+    loadExistingPlans();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [user, type]);
+
+  useEffect(() => {
+    const trimmedTitle = title.trim();
+
+    if (!trimmedTitle) {
+      setAiPlanSuggestions([]);
+      setAiHabitStack(null);
+      setIsAiLoading(false);
+      return;
+    }
+
+    const requestId = ++aiRequestIdRef.current;
+    setIsAiLoading(true);
+
+    const timeout = setTimeout(async () => {
+      try {
+        if (type === 'habit') {
+          const stack = await AiService.suggestHabitStack(trimmedTitle);
+          if (aiRequestIdRef.current === requestId) {
+            setAiHabitStack(stack);
+          }
+        } else {
+          const suggestions = await AiService.suggestHabits(trimmedTitle);
+          if (aiRequestIdRef.current === requestId) {
+            setAiPlanSuggestions(suggestions);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch setup suggestions', error);
+      } finally {
+        if (aiRequestIdRef.current === requestId) {
+          setIsAiLoading(false);
+        }
+      }
+    }, 650);
+
+    return () => clearTimeout(timeout);
+  }, [title, type]);
 
   const handleCreate = async () => {
     if (!title.trim() || !user) return; // Category is now optional
@@ -164,6 +230,37 @@ export default function CreatePlanScreen() {
           />
         </View>
 
+        {title.trim() ? (
+          <View className="mb-5 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+            <View className="mb-3 flex-row items-center">
+              <Sparkles size={18} color="#4f46e5" />
+              <Text className="ml-2 text-sm font-bold text-indigo-900">AI suggestions based on this title</Text>
+            </View>
+
+            {isAiLoading ? (
+              <View className="flex-row items-center">
+                <ActivityIndicator size="small" color="#4f46e5" />
+                <Text className="ml-2 text-sm text-indigo-700">Thinking through the best activities...</Text>
+              </View>
+            ) : type === 'habit' && aiHabitStack ? (
+              <View className="gap-2">
+                <Text className="text-sm text-indigo-900"><Text className="font-bold">Cue:</Text> {aiHabitStack.trigger.title}</Text>
+                <Text className="text-sm text-indigo-900"><Text className="font-bold">Main habit:</Text> {aiHabitStack.response.title}</Text>
+                <Text className="text-sm text-indigo-900"><Text className="font-bold">Stack:</Text> {aiHabitStack.stacked.title}</Text>
+                <Text className="text-sm text-indigo-900"><Text className="font-bold">Reward:</Text> {aiHabitStack.reward.title}</Text>
+              </View>
+            ) : aiPlanSuggestions.length > 0 ? (
+              <View className="gap-2">
+                {aiPlanSuggestions.slice(0, 4).map((suggestion) => (
+                  <Text key={suggestion} className="text-sm text-indigo-900">{`\u2022 ${suggestion}`}</Text>
+                ))}
+              </View>
+            ) : (
+              <Text className="text-sm text-indigo-700">Suggestions will appear here as you define the title.</Text>
+            )}
+          </View>
+        ) : null}
+
         {/* Link to Plan (Optional, Habit only) */}
         {type === 'habit' && existingPlans.length > 0 && (
              <View className="mb-4">
@@ -245,9 +342,9 @@ export default function CreatePlanScreen() {
         </View>
 
         <TouchableOpacity
-          className={`items-center justify-center rounded-lg bg-sky-500 p-4 ${isSubmitting || !title || !category ? 'opacity-70' : ''}`}
+          className={`items-center justify-center rounded-lg bg-sky-500 p-4 ${isSubmitting || !title.trim() ? 'opacity-70' : ''}`}
           onPress={handleCreate}
-          disabled={isSubmitting || !title || !category}
+          disabled={isSubmitting || !title.trim()}
         >
           {isSubmitting ? (
             <ActivityIndicator color="white" />

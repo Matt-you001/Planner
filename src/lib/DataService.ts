@@ -20,6 +20,7 @@ const STORAGE_KEYS = {
   GOALS: '@endinmind:goals',
   TASKS: '@endinmind:tasks',
   SYSTEMS: '@endinmind:systems',
+  JOURNALS: '@endinmind:journals',
 };
 
 import { HABIT_THRESHOLDS, HabitStage } from './types';
@@ -60,6 +61,8 @@ const normalizeJournalEntry = (id: string, data: any): JournalEntry => ({
   content: data.content || '',
   date: typeof data.date === 'string' ? data.date : (toIsoString(data.date)?.split('T')[0] || new Date().toISOString().split('T')[0]),
   createdAt: toIsoString(data.createdAt) || new Date().toISOString(),
+  goalId: data.goalId,
+  goalTitle: data.goalTitle,
   mood: data.mood,
   progress: typeof data.progress === 'number' ? data.progress : undefined,
 });
@@ -69,16 +72,18 @@ class PersistentStore {
   goals: WithId<Goal>[] = [];
   tasks: WithId<Task>[] = [];
   systems: WithId<System>[] = [];
+  journals: JournalEntry[] = [];
   initialized = false;
 
   async init() {
     if (this.initialized) return;
     try {
       console.log('DataService: Initializing local store...');
-      const [g, t, s] = await Promise.all([
+      const [g, t, s, j] = await Promise.all([
         AsyncStorage.getItem(STORAGE_KEYS.GOALS),
         AsyncStorage.getItem(STORAGE_KEYS.TASKS),
         AsyncStorage.getItem(STORAGE_KEYS.SYSTEMS),
+        AsyncStorage.getItem(STORAGE_KEYS.JOURNALS),
       ]);
       
       if (g) {
@@ -90,6 +95,7 @@ class PersistentStore {
       
       if (t) this.tasks = JSON.parse(t);
       if (s) this.systems = JSON.parse(s);
+      if (j) this.journals = JSON.parse(j);
       
       this.initialized = true;
     } catch (e) {
@@ -104,6 +110,7 @@ class PersistentStore {
         AsyncStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(this.goals)),
         AsyncStorage.setItem(STORAGE_KEYS.TASKS, JSON.stringify(this.tasks)),
         AsyncStorage.setItem(STORAGE_KEYS.SYSTEMS, JSON.stringify(this.systems)),
+        AsyncStorage.setItem(STORAGE_KEYS.JOURNALS, JSON.stringify(this.journals)),
       ]);
       console.log('DataService: Save complete.');
     } catch (e) {
@@ -157,21 +164,10 @@ class PersistentStore {
     return newSystem;
   }
 
-  async addNote(goalId: string, note: { content: string; date: string; mood?: JournalMood; progress?: number }) {
+  async addNote(note: JournalEntry) {
     await this.init();
-    const goal = this.goals.find(g => g.id === goalId);
-    if (goal) {
-        if (!goal.notes) goal.notes = [];
-        goal.notes.unshift({
-            id: `note-${Date.now()}`,
-            content: note.content,
-            date: note.date,
-            createdAt: new Date().toISOString(),
-            mood: note.mood,
-            progress: note.progress
-        });
-        await this.save();
-    }
+    this.journals.unshift(note);
+    await this.save();
   }
 
   async deleteGoal(id: string) {
@@ -202,20 +198,70 @@ export const DataService = {
   async getGoalNotes(userId: string, goalId: string): Promise<JournalEntry[]> {
     if (this.isDemoMode()) {
       await localStore.init();
-      return localStore.goals.find(g => g.id === goalId)?.notes || [];
+      const linkedJournals = localStore.journals.filter(journal => journal.goalId === goalId);
+      const legacyGoalNotes = localStore.goals.find(g => g.id === goalId)?.notes || [];
+      return [...linkedJournals, ...legacyGoalNotes]
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     }
 
     try {
-      const notesQuery = query(
-        collection(firestore, 'users', userId, 'goals', goalId, 'notes'),
-        orderBy('createdAt', 'desc')
-      );
-      const notesSnap = await getDocs(notesQuery);
-      return notesSnap.docs.map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data()));
+      const [linkedJournalSnap, legacyNotesSnap] = await Promise.all([
+        getDocs(query(
+          collection(firestore, 'users', userId, 'journals'),
+          where('goalId', '==', goalId),
+          orderBy('createdAt', 'desc')
+        )),
+        getDocs(query(
+          collection(firestore, 'users', userId, 'goals', goalId, 'notes'),
+          orderBy('createdAt', 'desc')
+        )).catch(() => ({ docs: [] as any[] }))
+      ]);
+
+      const combined = [
+        ...linkedJournalSnap.docs.map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data())),
+        ...legacyNotesSnap.docs.map(noteDoc => normalizeJournalEntry(noteDoc.id, noteDoc.data()))
+      ];
+
+      return combined.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     } catch (e) {
       console.warn("Fetch goal notes failed, using local store", e);
       await localStore.init();
-      return localStore.goals.find(g => g.id === goalId)?.notes || [];
+      const linkedJournals = localStore.journals.filter(journal => journal.goalId === goalId);
+      const legacyGoalNotes = localStore.goals.find(g => g.id === goalId)?.notes || [];
+      return [...linkedJournals, ...legacyGoalNotes]
+        .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    }
+  },
+
+  async getJournals(userId: string, date?: string): Promise<JournalEntry[]> {
+    if (this.isDemoMode()) {
+      await localStore.init();
+      const journals = date
+        ? localStore.journals.filter(journal => journal.date === date)
+        : localStore.journals;
+      return [...journals].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    }
+
+    try {
+      const constraints: any[] = [];
+      if (date) {
+        constraints.push(where('date', '==', date));
+      }
+      constraints.push(orderBy('createdAt', 'desc'));
+
+      const journalsSnap = await getDocs(query(
+        collection(firestore, 'users', userId, 'journals'),
+        ...constraints
+      ));
+
+      return journalsSnap.docs.map(journalDoc => normalizeJournalEntry(journalDoc.id, journalDoc.data()));
+    } catch (e) {
+      console.warn("Fetch journals failed, using local store", e);
+      await localStore.init();
+      const journals = date
+        ? localStore.journals.filter(journal => journal.date === date)
+        : localStore.journals;
+      return [...journals].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     }
   },
 
@@ -583,25 +629,30 @@ export const DataService = {
 
   async addNote(
     userId: string,
-    goalId: string,
+    goalId: string | undefined,
     entry: { content: string; date?: string; mood?: JournalMood; progress?: number } | string
   ) {
+    const linkedGoal = goalId ? await this.getGoal(userId, goalId).catch(() => null) : null;
     const noteData: Omit<JournalEntry, 'id'> = {
         content: typeof entry === 'string' ? entry : entry.content,
         date: typeof entry === 'string'
           ? new Date().toISOString().split('T')[0]
           : (entry.date || new Date().toISOString().split('T')[0]),
         createdAt: new Date().toISOString(),
+        goalId,
+        goalTitle: linkedGoal?.title,
         mood: typeof entry === 'string' ? undefined : entry.mood,
         progress: typeof entry === 'string' ? undefined : entry.progress
     };
 
     if (this.isDemoMode()) {
-        return localStore.addNote(goalId, noteData);
+        const savedNote = { ...noteData, id: `note-${Date.now()}` };
+        await localStore.addNote(savedNote);
+        return savedNote;
     }
 
     try {
-        const noteRef = await addDoc(collection(firestore, 'users', userId, 'goals', goalId, 'notes'), {
+        const noteRef = await addDoc(collection(firestore, 'users', userId, 'journals'), {
             ...noteData,
             createdAt: serverTimestamp()
         });
@@ -611,7 +662,9 @@ export const DataService = {
         };
     } catch (e) {
         console.warn("Add note failed, using local store", e);
-        return localStore.addNote(goalId, noteData);
+        const savedNote = { ...noteData, id: `note-${Date.now()}` };
+        await localStore.addNote(savedNote);
+        return savedNote;
     }
   },
 

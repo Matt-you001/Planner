@@ -33,8 +33,19 @@ type OnlineAiPayload = {
   context?: Record<string, unknown>;
 };
 
-const AI_API_URL = process.env.EXPO_PUBLIC_AI_API_URL;
+const RAW_AI_API_URL = process.env.EXPO_PUBLIC_AI_API_URL;
 const AI_API_KEY = process.env.EXPO_PUBLIC_AI_API_KEY;
+
+const normalizeAiEndpoint = (value?: string) => {
+  if (!value) return null;
+
+  const trimmed = value.trim().replace(/\/+$/, '');
+  if (!trimmed) return null;
+  if (trimmed.endsWith('/ai-coach')) return trimmed;
+  return `${trimmed}/ai-coach`;
+};
+
+const AI_API_URL = normalizeAiEndpoint(RAW_AI_API_URL);
 
 const hasOnlineAi = () => Boolean(AI_API_URL);
 

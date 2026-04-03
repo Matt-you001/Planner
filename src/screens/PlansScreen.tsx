@@ -44,7 +44,7 @@ export default function PlansScreen({ navigation }: any) {
   // Initial load
   useEffect(() => {
     loadGoals();
-  }, []);
+  }, [loadGoals]);
 
   const isLoading = isAuthLoading || isGoalsLoading;
 

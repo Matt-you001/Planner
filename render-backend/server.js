@@ -33,6 +33,14 @@ if (!admin.apps.length) {
 app.use(cors());
 app.use(express.json());
 
+app.get("/", (_req, res) => {
+  res.json({
+    ok: true,
+    service: "planapp-ai-backend",
+    endpoints: ["/health", "/ai-coach"]
+  });
+});
+
 app.get("/health", (_req, res) => {
   res.json({ ok: true });
 });
@@ -40,7 +48,7 @@ app.get("/health", (_req, res) => {
 async function verifyFirebaseUser(req) {
   const token = req.get("X-Firebase-Auth");
   if (!token) {
-    throw new Error("Missing Firebase auth token.");
+    return null;
   }
 
   return admin.auth().verifyIdToken(token);
@@ -149,7 +157,7 @@ async function callOpenAI(type, goalDescription, context) {
   return JSON.parse(data.output_text);
 }
 
-app.post("/ai-coach", async (req, res) => {
+async function handleAiCoach(req, res) {
   try {
     const decodedUser = await verifyFirebaseUser(req);
     const { type, goalDescription, context } = req.body || {};
@@ -160,7 +168,7 @@ app.post("/ai-coach", async (req, res) => {
 
     const result = await callOpenAI(type, goalDescription, {
       ...(context || {}),
-      userId: decodedUser.uid
+      userId: decodedUser?.uid || "anonymous"
     });
 
     res.json(result);
@@ -170,7 +178,10 @@ app.post("/ai-coach", async (req, res) => {
       error: error instanceof Error ? error.message : "Unknown server error"
     });
   }
-});
+}
+
+app.post("/", handleAiCoach);
+app.post("/ai-coach", handleAiCoach);
 
 app.listen(port, () => {
   console.log(`Planner Render backend listening on port ${port}`);

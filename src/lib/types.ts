@@ -20,6 +20,8 @@ export type JournalEntry = {
   content: string;
   date: string; // "YYYY-MM-DD"
   createdAt: string; // ISO String
+  goalId?: string;
+  goalTitle?: string;
   mood?: JournalMood;
   progress?: number; // 0-100 self-reported progress for this entry
 };

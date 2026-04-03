@@ -1,15 +1,15 @@
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, ActivityIndicator, RefreshControl, Linking, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, ScrollView, ActivityIndicator, RefreshControl, Linking, TouchableOpacity, Modal, Alert, TextInput } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import { launchApp } from '../services/InstalledApps';
 import { format } from 'date-fns';
 import { useAuth } from '../context/AuthContext';
 import ActionItem from '../components/ActionItem';
-import type { System, Task, WithId } from '../lib/types';
+import type { System, Task, WithId, Goal, JournalEntry, JournalMood } from '../lib/types';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DataService } from '../lib/DataService';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Plus, X, Calendar, CheckSquare, LogOut, Layers, ClipboardList, Clock, Zap } from 'lucide-react-native';
+import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen } from 'lucide-react-native';
 import { useCelebration } from '../context/CelebrationContext';
 
 type Action = WithId<System> | WithId<Task>;
@@ -22,10 +22,17 @@ export default function DashboardScreen() {
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [systems, setSystems] = useState<System[]>([]);
+  const [goals, setGoals] = useState<WithId<Goal>[]>([]);
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isModalVisible, setModalVisible] = useState(false);
+  const [isJournalModalVisible, setJournalModalVisible] = useState(false);
   // Secondary state for "Create a Plan" sub-selection
   const [showCreatePlanOptions, setShowCreatePlanOptions] = useState(false);
+  const [selectedGoalId, setSelectedGoalId] = useState<string>('');
+  const [journalContent, setJournalContent] = useState('');
+  const [journalMood, setJournalMood] = useState<JournalMood>('Good');
+  const [isSavingJournal, setIsSavingJournal] = useState(false);
 
   // Track which apps we've already auto-opened this session
   const openedActionsRef = useRef<Set<string>>(new Set());
@@ -33,12 +40,16 @@ export default function DashboardScreen() {
   const loadDashboardData = useCallback(async () => {
     if (!user) return;
     setIsDataLoading(true);
-    const [fetchedTasks, fetchedSystems] = await Promise.all([
+    const [fetchedTasks, fetchedSystems, fetchedGoals, fetchedJournals] = await Promise.all([
         DataService.getTasks(user.uid, undefined, today),
-        DataService.getSystems(user.uid, undefined, today)
+        DataService.getSystems(user.uid, undefined, today),
+        DataService.getGoals(user.uid),
+        DataService.getJournals(user.uid, today)
     ]);
     setTasks(fetchedTasks);
     setSystems(fetchedSystems);
+    setGoals(fetchedGoals);
+    setJournals(fetchedJournals);
     setIsDataLoading(false);
   }, [user, today]);
 
@@ -47,6 +58,10 @@ export default function DashboardScreen() {
         loadDashboardData();
     }, [loadDashboardData])
   );
+
+  useEffect(() => {
+    loadDashboardData();
+  }, [loadDashboardData]);
 
   const upcomingActions = useMemo(() => {
     const allActions: Action[] = [...(systems || []), ...(tasks || [])];
@@ -172,6 +187,33 @@ export default function DashboardScreen() {
 
   const isLoading = isAuthLoading || isDataLoading;
 
+  const todaysJournalEntries = useMemo(() => {
+    return [...journals].sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  }, [journals]);
+
+  const handleSaveJournal = async () => {
+    if (!user || !journalContent.trim()) return;
+
+    setIsSavingJournal(true);
+    try {
+      await DataService.addNote(user.uid, selectedGoalId || undefined, {
+        content: journalContent.trim(),
+        date: today,
+        mood: journalMood
+      });
+      setJournalContent('');
+      setJournalMood('Good');
+      setSelectedGoalId('');
+      setJournalModalVisible(false);
+      loadDashboardData();
+    } catch (error) {
+      console.error("Failed to save journal entry", error);
+      Alert.alert("Error", "Could not save journal entry.");
+    } finally {
+      setIsSavingJournal(false);
+    }
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
@@ -179,13 +221,29 @@ export default function DashboardScreen() {
             <Text className="text-2xl font-bold text-gray-900">Today's Dashboard</Text>
             <Text className="text-sm text-gray-500">Your upcoming activities and one-off tasks.</Text>
         </View>
-        <TouchableOpacity  
-            className="flex-row items-center justify-center rounded-md bg-sky-500 px-3 py-2"
-            onPress={() => setModalVisible(true)}
-        >
-            <Plus size={20} color="white" />
-            <Text className="ml-1 font-medium text-white">New</Text>
-        </TouchableOpacity>
+        <View className="flex-row gap-2">
+            <TouchableOpacity  
+                className="flex-row items-center justify-center rounded-md bg-amber-500 px-3 py-2"
+                onPress={() => {
+                    if (goals.length === 0) {
+                        setSelectedGoalId('');
+                    } else {
+                        setSelectedGoalId('');
+                    }
+                    setJournalModalVisible(true);
+                }}
+            >
+                <BookOpen size={18} color="white" />
+                <Text className="ml-1 font-medium text-white">Journal</Text>
+            </TouchableOpacity>
+            <TouchableOpacity  
+                className="flex-row items-center justify-center rounded-md bg-sky-500 px-3 py-2"
+                onPress={() => setModalVisible(true)}
+            >
+                <Plus size={20} color="white" />
+                <Text className="ml-1 font-medium text-white">New</Text>
+            </TouchableOpacity>
+        </View>
       </View>
 
       {/* Daily Progress Tracker */}
@@ -212,6 +270,36 @@ export default function DashboardScreen() {
             <RefreshControl refreshing={isLoading} onRefresh={loadDashboardData} />
         }
       >
+        <View className="mb-6">
+          <View className="mb-2 flex-row items-center justify-between">
+            <Text className="text-sm font-bold text-gray-700">Today's Journal</Text>
+            <TouchableOpacity onPress={() => {
+              setSelectedGoalId('');
+              setJournalModalVisible(true);
+            }}>
+              <Text className="text-xs font-semibold text-amber-600">Add Entry</Text>
+            </TouchableOpacity>
+          </View>
+
+          {todaysJournalEntries.length > 0 ? (
+            todaysJournalEntries.map((entry) => (
+              <View key={entry.id} className="mb-3 rounded-xl border border-amber-100 bg-amber-50 p-4">
+                <View className="mb-2 flex-row items-center justify-between">
+                  <Text className="text-xs font-bold text-amber-800">{entry.goalTitle || 'Personal Journal'}</Text>
+                  {entry.mood ? (
+                    <Text className="text-[10px] font-bold uppercase text-amber-600">{entry.mood}</Text>
+                  ) : null}
+                </View>
+                <Text className="text-sm text-gray-800">{entry.content}</Text>
+              </View>
+            ))
+          ) : (
+            <View className="rounded-lg border border-dashed border-amber-200 bg-amber-50/60 p-4">
+              <Text className="text-sm text-amber-800">No journal entries yet for today.</Text>
+            </View>
+          )}
+        </View>
+
         {!isLoading && upcomingActions.length > 0 ? (
           upcomingActions.map(action => (
             <ActionItem
@@ -312,6 +400,77 @@ export default function DashboardScreen() {
                     </View>
                 )}
             </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={isJournalModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setJournalModalVisible(false)}
+      >
+        <View className="flex-1 justify-center bg-black/50 p-4">
+          <View className="rounded-lg bg-white p-6 shadow-lg">
+            <View className="mb-4 flex-row items-center justify-between">
+              <Text className="text-lg font-bold">Journal Today</Text>
+              <TouchableOpacity onPress={() => setJournalModalVisible(false)}>
+                <X size={24} color="gray" />
+              </TouchableOpacity>
+            </View>
+
+            <Text className="mb-2 text-sm font-medium text-gray-700">Link to Plan/Habit (Optional)</Text>
+            <TouchableOpacity
+              className={`mb-3 rounded-full border px-3 py-2 self-start ${selectedGoalId === '' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white'}`}
+              onPress={() => setSelectedGoalId('')}
+            >
+              <Text className={`text-xs font-semibold ${selectedGoalId === '' ? 'text-amber-700' : 'text-gray-600'}`}>Journal independently</Text>
+            </TouchableOpacity>
+            <View className="mb-4 flex-row flex-wrap gap-2">
+              {goals.map(goal => (
+                <TouchableOpacity
+                  key={goal.id}
+                  className={`rounded-full border px-3 py-2 ${selectedGoalId === goal.id ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white'}`}
+                  onPress={() => setSelectedGoalId(goal.id)}
+                >
+                  <Text className={`text-xs font-semibold ${selectedGoalId === goal.id ? 'text-amber-700' : 'text-gray-600'}`}>{goal.title}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text className="mb-2 text-sm font-medium text-gray-700">Mood</Text>
+            <View className="mb-4 flex-row gap-2">
+              {(['Great', 'Good', 'Okay', 'Hard'] as JournalMood[]).map((mood) => (
+                <TouchableOpacity
+                  key={mood}
+                  className={`rounded-full border px-3 py-2 ${journalMood === mood ? 'border-sky-500 bg-sky-50' : 'border-gray-200 bg-white'}`}
+                  onPress={() => setJournalMood(mood)}
+                >
+                  <Text className={`text-xs font-semibold ${journalMood === mood ? 'text-sky-700' : 'text-gray-600'}`}>{mood}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <TextInput
+              className="mb-4 rounded-md border border-gray-300 p-3 h-28"
+              placeholder="What happened today? What worked, what was hard, what do you want to remember?"
+              value={journalContent}
+              onChangeText={setJournalContent}
+              multiline
+              textAlignVertical="top"
+            />
+
+            <TouchableOpacity
+              className="items-center rounded-md bg-amber-500 p-3"
+              onPress={handleSaveJournal}
+              disabled={isSavingJournal || !journalContent.trim()}
+            >
+              {isSavingJournal ? (
+                <ActivityIndicator color="white" />
+              ) : (
+                <Text className="font-bold text-white">Save Journal Entry</Text>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>

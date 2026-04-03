@@ -184,6 +184,45 @@ export default function PlanIsolateScreen() {
     }
   };
 
+  useEffect(() => {
+    if (!goalTitle?.trim()) return;
+    if (!(activities.length === 1 && activities[0].title.trim() === '')) return;
+
+    let isCancelled = false;
+
+    const preloadSuggestions = async () => {
+      setIsAiLoading(true);
+      try {
+        const suggestions = await AiService.suggestHabits(goalTitle);
+        if (!isCancelled) {
+          setAiSuggestions(suggestions);
+          if (suggestions.length > 0) {
+            setActivities(suggestions.slice(0, 3).map((suggestion, index) => ({
+              id: `${Date.now()}-${index}`,
+              title: suggestion,
+              startTime: new Date(),
+              endTime: new Date(new Date().getTime() + 30 * 60000),
+              linkedApp: '',
+              alarm: false
+            })));
+          }
+        }
+      } catch (error) {
+        console.error('Failed to preload plan suggestions', error);
+      } finally {
+        if (!isCancelled) {
+          setIsAiLoading(false);
+        }
+      }
+    };
+
+    preloadSuggestions();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [goalTitle]);
+
   const handleSelectSuggestion = (suggestion: string) => {
     // If the first activity is empty, replace it
     if (activities.length === 1 && activities[0].title === '') {
@@ -323,6 +362,15 @@ export default function PlanIsolateScreen() {
       </View>
 
       <ScrollView className="flex-1 p-4">
+        {aiSuggestions.length > 0 ? (
+          <View className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
+            <Text className="mb-2 text-sm font-bold text-indigo-900">AI activity ideas for this plan</Text>
+            {aiSuggestions.slice(0, 5).map((suggestion) => (
+              <Text key={suggestion} className="mb-1 text-sm text-indigo-800">{`\u2022 ${suggestion}`}</Text>
+            ))}
+          </View>
+        ) : null}
+
         <View className="mb-6">
           <Text className="mb-2 text-center text-sm font-medium text-gray-500">
              Pick any day between {(() => {
