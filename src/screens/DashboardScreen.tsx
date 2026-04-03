@@ -27,6 +27,7 @@ export default function DashboardScreen() {
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isModalVisible, setModalVisible] = useState(false);
   const [isJournalModalVisible, setJournalModalVisible] = useState(false);
+  const [isGoalPickerVisible, setGoalPickerVisible] = useState(false);
   // Secondary state for "Create a Plan" sub-selection
   const [showCreatePlanOptions, setShowCreatePlanOptions] = useState(false);
   const [selectedGoalId, setSelectedGoalId] = useState<string>('');
@@ -223,25 +224,21 @@ export default function DashboardScreen() {
         </View>
         <View className="flex-row gap-2">
             <TouchableOpacity  
-                className="flex-row items-center justify-center rounded-md bg-amber-500 px-3 py-2"
+                className="flex-row items-center justify-center rounded-md bg-amber-500 px-2 py-2"
                 onPress={() => {
-                    if (goals.length === 0) {
-                        setSelectedGoalId('');
-                    } else {
-                        setSelectedGoalId('');
-                    }
+                    setSelectedGoalId('');
                     setJournalModalVisible(true);
                 }}
             >
                 <BookOpen size={18} color="white" />
-                <Text className="ml-1 font-medium text-white">Journal</Text>
+                <Text className="ml-1 text-xs font-medium text-white">Journal</Text>
             </TouchableOpacity>
             <TouchableOpacity  
                 className="flex-row items-center justify-center rounded-md bg-sky-500 px-3 py-2"
                 onPress={() => setModalVisible(true)}
             >
                 <Plus size={20} color="white" />
-                <Text className="ml-1 font-medium text-white">New</Text>
+                <Text className="ml-1 text-xs font-medium text-white">New</Text>
             </TouchableOpacity>
         </View>
       </View>
@@ -291,6 +288,9 @@ export default function DashboardScreen() {
                   ) : null}
                 </View>
                 <Text className="text-sm text-gray-800">{entry.content}</Text>
+                <Text className="mt-2 text-xs text-gray-500">
+                  {format(new Date(entry.createdAt), 'EEE, MMM d')} at {format(new Date(entry.createdAt), 'h:mm a')}
+                </Text>
               </View>
             ))
           ) : (
@@ -420,22 +420,22 @@ export default function DashboardScreen() {
 
             <Text className="mb-2 text-sm font-medium text-gray-700">Link to Plan/Habit (Optional)</Text>
             <TouchableOpacity
-              className={`mb-3 rounded-full border px-3 py-2 self-start ${selectedGoalId === '' ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white'}`}
-              onPress={() => setSelectedGoalId('')}
+              className="mb-2 rounded-md border border-gray-300 px-3 py-3"
+              onPress={() => setGoalPickerVisible(true)}
             >
-              <Text className={`text-xs font-semibold ${selectedGoalId === '' ? 'text-amber-700' : 'text-gray-600'}`}>Journal independently</Text>
+              <Text className={`text-sm ${selectedGoalId ? 'text-gray-900' : 'text-gray-500'}`}>
+                {selectedGoalId
+                  ? goals.find(goal => goal.id === selectedGoalId)?.title || 'Linked plan selected'
+                  : 'Select a plan or habit to link this journal'}
+              </Text>
             </TouchableOpacity>
-            <View className="mb-4 flex-row flex-wrap gap-2">
-              {goals.map(goal => (
-                <TouchableOpacity
-                  key={goal.id}
-                  className={`rounded-full border px-3 py-2 ${selectedGoalId === goal.id ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white'}`}
-                  onPress={() => setSelectedGoalId(goal.id)}
-                >
-                  <Text className={`text-xs font-semibold ${selectedGoalId === goal.id ? 'text-amber-700' : 'text-gray-600'}`}>{goal.title}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
+            {selectedGoalId ? (
+              <TouchableOpacity onPress={() => setSelectedGoalId('')} className="mb-4 self-start">
+                <Text className="text-xs font-semibold text-red-500">Remove link</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text className="mb-4 text-xs text-gray-500">Leave this unselected to save an independent journal.</Text>
+            )}
 
             <Text className="mb-2 text-sm font-medium text-gray-700">Mood</Text>
             <View className="mb-4 flex-row gap-2">
@@ -472,6 +472,41 @@ export default function DashboardScreen() {
             </TouchableOpacity>
           </View>
         </View>
+      </Modal>
+
+      <Modal
+        visible={isGoalPickerVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setGoalPickerVisible(false)}
+      >
+        <TouchableOpacity
+          className="flex-1 justify-end bg-black/50"
+          activeOpacity={1}
+          onPress={() => setGoalPickerVisible(false)}
+        >
+          <View className="rounded-t-xl bg-white p-4" style={{ maxHeight: '60%' }}>
+            <Text className="mb-4 text-center text-lg font-bold text-gray-900">Link to Plan/Habit</Text>
+            <ScrollView>
+              {goals.length > 0 ? goals.map(goal => (
+                <TouchableOpacity
+                  key={goal.id}
+                  className="border-b border-gray-100 py-4"
+                  onPress={() => {
+                    setSelectedGoalId(goal.id);
+                    setGoalPickerVisible(false);
+                  }}
+                >
+                  <Text className="text-center text-base text-gray-800">{goal.title}</Text>
+                </TouchableOpacity>
+              )) : (
+                <View className="py-8">
+                  <Text className="text-center text-sm text-gray-500">No plans or habits available yet.</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </TouchableOpacity>
       </Modal>
     </SafeAreaView>
   );

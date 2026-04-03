@@ -317,11 +317,7 @@ export const DataService = {
       return [...localStore.goals]; // Return copy to force React update
     }
     try {
-      const q = query(
-        collection(firestore, 'users', userId, 'goals'), 
-        orderBy('createdAt', 'desc')
-      );
-      const snap = await getDocs(q);
+      const snap = await getDocs(collection(firestore, 'users', userId, 'goals'));
       const goals = snap.docs.map(d => normalizeGoal(d.id, d.data()));
       const goalsWithNotes = await Promise.all(
         goals.map(async goal => ({
@@ -329,7 +325,11 @@ export const DataService = {
           notes: await this.getGoalNotes(userId, goal.id)
         }))
       );
-      return goalsWithNotes;
+      const sortedGoals = goalsWithNotes.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      await localStore.init();
+      localStore.goals = [...sortedGoals];
+      await localStore.save();
+      return sortedGoals;
     } catch (e) {
       console.warn("Fetch goals failed, using local store", e);
       await localStore.init();
@@ -373,7 +373,11 @@ export const DataService = {
         ...goalData,
         createdAt: serverTimestamp() // Use server timestamp for real DB
       });
-      return { ...goalData, id: ref.id };
+      const createdGoal = { ...goalData, id: ref.id };
+      await localStore.init();
+      localStore.goals = [createdGoal, ...localStore.goals.filter(goal => goal.id !== ref.id)];
+      await localStore.save();
+      return createdGoal;
     } catch (e) {
       console.warn("Create goal failed, using local store", e);
       return localStore.addGoal(goalData);
