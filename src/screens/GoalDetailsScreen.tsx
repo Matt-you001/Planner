@@ -4,12 +4,13 @@ import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/nativ
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import { format, addDays, subDays, isToday } from 'date-fns';
-import { ChevronLeft, ChevronRight, ArrowLeft, Plus, X, Trash2, FileText, Award, BookOpen } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, ArrowLeft, Plus, X, Trash2, FileText, Award, BookOpen, BrainCircuit } from 'lucide-react-native';
 import { startOfWeek, endOfWeek, startOfMonth, endOfMonth, isWithinInterval } from 'date-fns';
 import Slider from '@react-native-community/slider';
 import ActionItem from '../components/ActionItem';
 import { Goal, Task, System, WithId, HabitStage, HABIT_THRESHOLDS, JournalEntry, JournalMood } from '../lib/types';
 import { DataService } from '../lib/DataService';
+import { AiService, NextBestAction } from '../lib/AiService';
 
 export default function GoalDetailsScreen() {
   const route = useRoute<any>();
@@ -36,6 +37,8 @@ export default function GoalDetailsScreen() {
   const [noteMood, setNoteMood] = useState<JournalMood>('Good');
   const [noteProgress, setNoteProgress] = useState(50);
   const [isAddingNote, setIsAddingNote] = useState(false);
+  const [isCoachLoading, setIsCoachLoading] = useState(false);
+  const [coachInsight, setCoachInsight] = useState<NextBestAction | null>(null);
 
   const dateString = format(selectedDate, 'yyyy-MM-dd');
   const uid = user?.uid || 'mock-user-123';
@@ -192,6 +195,45 @@ export default function GoalDetailsScreen() {
       loadData();
     } catch (e) {
       console.error("Failed to update action", e);
+    }
+  };
+
+  const handleAskAiCoach = async () => {
+    if (!goal) return;
+
+    setIsCoachLoading(true);
+    try {
+      const [allTasks, allSystems] = await Promise.all([
+        DataService.getTasks(uid, goalId),
+        DataService.getSystems(uid, goalId)
+      ]);
+
+      const allActions = [...allTasks, ...allSystems];
+      const completedActions = allActions.filter(action => action.isCompleted).length;
+      const pendingActions = allActions.filter(action => !action.isCompleted).length;
+      const recentJournalHighlights = (goal.notes || [])
+        .slice(0, 3)
+        .map(entry => entry.content)
+        .join(' | ');
+
+      const recommendation = await AiService.suggestNextBestAction(goal.title, {
+        category: goal.category,
+        recentProgress: goal.progress || 0,
+        completedCount: habitStats?.completedCount || 0,
+        habitStage: habitStats?.stage || 'Intention',
+        journalEntries: goal.notes?.length || 0,
+        completedActions,
+        pendingActions,
+        recentJournalHighlights,
+        latestJournalDate: goal.notes?.[0]?.date,
+        currentViewMode: viewMode,
+      });
+
+      setCoachInsight(recommendation);
+    } catch (error) {
+      console.error('Failed to get AI coach insight', error);
+    } finally {
+      setIsCoachLoading(false);
     }
   };
 
@@ -375,6 +417,48 @@ export default function GoalDetailsScreen() {
                 </View>
             </View>
         )}
+
+        <View className="mb-6 rounded-xl border border-sky-100 bg-sky-50 p-4">
+            <View className="mb-3 flex-row items-center justify-between">
+                <View className="flex-row items-center">
+                    <BrainCircuit size={18} color="#0369a1" />
+                    <Text className="ml-2 text-sm font-bold text-sky-900">AI Achievement Coach</Text>
+                </View>
+                <TouchableOpacity
+                    className="rounded-full bg-white px-3 py-2"
+                    onPress={handleAskAiCoach}
+                    disabled={isCoachLoading}
+                >
+                    {isCoachLoading ? (
+                        <ActivityIndicator size="small" color="#0369a1" />
+                    ) : (
+                        <Text className="text-xs font-bold text-sky-700">Suggest Next Action</Text>
+                    )}
+                </TouchableOpacity>
+            </View>
+
+            <Text className="text-xs text-sky-700">
+                Prompt the coach any time to review your plan, your journal trail, and your current achievement stage.
+            </Text>
+
+            {coachInsight ? (
+                <View className="mt-4 rounded-lg bg-white p-4">
+                    <View className="mb-2 flex-row items-center justify-between">
+                        <Text className="flex-1 text-sm font-bold text-sky-900">{coachInsight.title}</Text>
+                        {coachInsight.achievementStage ? (
+                            <Text className="ml-2 text-[10px] font-bold uppercase text-sky-600">{coachInsight.achievementStage}</Text>
+                        ) : null}
+                    </View>
+                    {coachInsight.coachMessage ? (
+                        <Text className="mb-2 text-sm leading-6 text-gray-700">{coachInsight.coachMessage}</Text>
+                    ) : null}
+                    <Text className="text-sm leading-6 text-gray-600">{coachInsight.reason}</Text>
+                    {coachInsight.suggestedDuration ? (
+                        <Text className="mt-3 text-xs font-semibold text-gray-500">Suggested duration: {coachInsight.suggestedDuration}</Text>
+                    ) : null}
+                </View>
+            ) : null}
+        </View>
 
         {/* View Mode Selector */}
         <View className="flex-row justify-center mb-4 bg-gray-100 p-1 rounded-lg">

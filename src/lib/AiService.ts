@@ -21,7 +21,10 @@ const NextBestActionSchema = z.object({
   title: z.string(),
   reason: z.string(),
   suggestedDuration: z.string().optional(),
-  confidence: z.number().min(0).max(1).optional()
+  confidence: z.number().min(0).max(1).optional(),
+  coachMessage: z.string().optional(),
+  achievementStage: z.string().optional(),
+  tone: z.enum(['commend', 'encourage', 'motivate', 'steady']).optional()
 });
 
 export type SuggestHabitStackOutput = z.infer<typeof SuggestHabitStackOutputSchema>;
@@ -241,13 +244,22 @@ function localHabitList(goalDescription: string): string[] {
 function localNextBestAction(goalDescription: string, context?: Record<string, unknown>): NextBestAction {
   const streak = typeof context?.completedCount === 'number' ? context.completedCount : 0;
   const recentProgress = typeof context?.recentProgress === 'number' ? context.recentProgress : 0;
+  const completedActions = typeof context?.completedActions === 'number' ? context.completedActions : 0;
+  const pendingActions = typeof context?.pendingActions === 'number' ? context.pendingActions : 0;
+  const habitStage = typeof context?.habitStage === 'string' ? context.habitStage : 'Intention';
+  const journalEntries = typeof context?.journalEntries === 'number' ? context.journalEntries : 0;
 
   if (recentProgress < 30) {
     return {
       title: `Do the smallest possible step toward ${goalDescription}`,
       reason: "Momentum is low, so the best next move is a quick win that lowers friction.",
       suggestedDuration: "5-10 min",
-      confidence: 0.8
+      confidence: 0.8,
+      achievementStage: habitStage,
+      tone: 'encourage',
+      coachMessage: journalEntries > 0
+        ? `You are still in the ${habitStage} stage, and your journal shows you are paying attention. Keep the bar low today and win back momentum with one clear move.`
+        : `You are still in the ${habitStage} stage. Start small, remove friction, and let today's win rebuild confidence.`
     };
   }
 
@@ -256,7 +268,22 @@ function localNextBestAction(goalDescription: string, context?: Record<string, u
       title: `Increase the challenge slightly for ${goalDescription}`,
       reason: "You already have consistency, so a small progression can help you keep improving.",
       suggestedDuration: "15-20 min",
-      confidence: 0.76
+      confidence: 0.76,
+      achievementStage: habitStage,
+      tone: 'commend',
+      coachMessage: `You have built real consistency around this goal. That deserves credit. The next step is not a reset, but a careful progression that stretches you without breaking the streak.`
+    };
+  }
+
+  if (completedActions > 0 && pendingActions > 0) {
+    return {
+      title: `Finish the next unfinished action for ${goalDescription}`,
+      reason: "You already have movement on this goal, so closing the next open loop will create visible progress quickly.",
+      suggestedDuration: "10-15 min",
+      confidence: 0.79,
+      achievementStage: habitStage,
+      tone: 'motivate',
+      coachMessage: `You have already moved this goal forward. Keep that energy alive by finishing one pending action and giving yourself a cleaner path into the next stage.`
     };
   }
 
@@ -264,7 +291,10 @@ function localNextBestAction(goalDescription: string, context?: Record<string, u
     title: `Schedule your next focused block for ${goalDescription}`,
     reason: "The app works best when the next action is explicit and placed on the calendar.",
     suggestedDuration: "10-15 min",
-    confidence: 0.72
+    confidence: 0.72,
+    achievementStage: habitStage,
+    tone: 'steady',
+    coachMessage: `You are currently in the ${habitStage} stage. Stay steady, keep showing up, and make the next action visible on your schedule so progress does not stay abstract.`
   };
 }
 

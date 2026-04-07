@@ -25,12 +25,21 @@ export default function AiCoachScreen() {
         activeGoals.map(async (goal) => {
           const habitStats = await DataService.getHabitStage(uid, goal.id).catch(() => ({ stage: 'Intention' as const, completedCount: 0 }));
           const recentProgress = goal.progress || 0;
+          const [tasks, systems] = await Promise.all([
+            DataService.getTasks(uid, goal.id),
+            DataService.getSystems(uid, goal.id)
+          ]);
+          const allActions = [...tasks, ...systems];
 
           const recommendation = await AiService.suggestNextBestAction(goal.title, {
             category: goal.category,
             recentProgress,
             completedCount: habitStats.completedCount,
+            habitStage: habitStats.stage,
             journalEntries: goal.notes?.length || 0,
+            completedActions: allActions.filter(action => action.isCompleted).length,
+            pendingActions: allActions.filter(action => !action.isCompleted).length,
+            recentJournalHighlights: (goal.notes || []).slice(0, 2).map(entry => entry.content).join(' | '),
           });
 
           return {
@@ -106,6 +115,9 @@ export default function AiCoachScreen() {
                 <Text className="ml-2 flex-1 text-base font-bold text-gray-900">{item.goalTitle}</Text>
               </View>
               <Text className="mb-2 text-sm font-semibold text-sky-700">{item.recommendation.title}</Text>
+              {item.recommendation.coachMessage ? (
+                <Text className="mb-3 text-sm leading-6 text-gray-700">{item.recommendation.coachMessage}</Text>
+              ) : null}
               <Text className="text-sm leading-6 text-gray-600">{item.recommendation.reason}</Text>
               {item.recommendation.suggestedDuration ? (
                 <Text className="mt-3 text-xs font-semibold text-gray-500">Suggested duration: {item.recommendation.suggestedDuration}</Text>

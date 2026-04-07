@@ -98,9 +98,14 @@ Return JSON only with this exact shape:
   "title": string,
   "reason": string,
   "suggestedDuration": string,
-  "confidence": number
+  "confidence": number,
+  "coachMessage": string,
+  "achievementStage": string,
+  "tone": "commend" | "encourage" | "motivate" | "steady"
 }
 Choose the single best next action for the user right now.
+Read the goal context, execution progress, and journal information carefully.
+Use coachMessage to commend the user when they are progressing well, encourage them when momentum is low, and motivate them when they are close to the next stage.
 Confidence must be between 0 and 1.
 `.trim();
 }
