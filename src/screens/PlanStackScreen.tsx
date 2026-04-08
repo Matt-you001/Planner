@@ -85,10 +85,21 @@ export default function PlanStackScreen() {
   // Stacks List
   const [stacks, setStacks] = useState<StackItem[]>([]);
 
+  const getRoundedStartTime = (hourOffset: number = 0, minuteOffset: number = 0) => {
+      const start = new Date();
+      start.setSeconds(0, 0);
+      const remainder = start.getMinutes() % 5;
+      if (remainder !== 0) {
+          start.setMinutes(start.getMinutes() + (5 - remainder));
+      }
+      start.setHours(start.getHours() + hourOffset);
+      start.setMinutes(start.getMinutes() + minuteOffset);
+      return start;
+  };
+
   // Helper to create default part
   const createPart = (title: string = '', hourOffset: number = 0, minuteOffset: number = 0): StackPart => {
-      const start = new Date();
-      start.setHours(8 + hourOffset, minuteOffset, 0, 0);
+      const start = getRoundedStartTime(hourOffset, minuteOffset);
       const end = new Date(start.getTime() + 5 * 60000); // 5 mins default
       return { title, startTime: start, endTime: end, linkedApp: '', alarm: true }; // Default Alarm True
   };

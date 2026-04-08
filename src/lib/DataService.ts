@@ -184,6 +184,7 @@ class PersistentStore {
     // Cascade delete tasks and systems
     this.tasks = this.tasks.filter(t => t.goalId !== id);
     this.systems = this.systems.filter(s => s.goalId !== id);
+    this.journals = this.journals.filter(j => j.goalId !== id);
     await this.save();
   }
 
@@ -429,6 +430,7 @@ export const DataService = {
       }
       try {
           await deleteDoc(doc(firestore, 'users', userId, 'goals', goalId));
+          await localStore.deleteGoal(goalId);
           // Note: In Firestore, you have to manually delete subcollections or linked documents 
           // unless you use a cloud function. For this app, we might leave orphans or try to delete them.
           // Since we query by collection group or root collection with userId, orphans might stick around 
