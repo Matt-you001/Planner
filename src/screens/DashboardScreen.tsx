@@ -220,7 +220,7 @@ export default function DashboardScreen() {
       <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
         <View>
             <Text className="text-2xl font-bold text-gray-900">Home</Text>
-            <Text className="text-sm text-gray-500">Your upcoming activities and one-off tasks.</Text>
+            <Text className="text-sm text-gray-500">Your upcoming activities.</Text>
         </View>
         <View className="flex-row gap-2">
             <TouchableOpacity  
