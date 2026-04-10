@@ -223,12 +223,6 @@ export default function DashboardScreen() {
             <Text className="text-sm text-gray-500">Your upcoming activities and one-off tasks.</Text>
         </View>
         <View className="flex-row gap-2">
-            <TouchableOpacity
-                className="flex-row items-center justify-center rounded-md bg-gray-100 px-2 py-2"
-                onPress={() => navigation.navigate('Settings')}
-            >
-                <Settings size={18} color="#374151" />
-            </TouchableOpacity>
             <TouchableOpacity  
                 className="flex-row items-center justify-center rounded-md bg-amber-500 px-2 py-2"
                 onPress={() => {
@@ -245,6 +239,12 @@ export default function DashboardScreen() {
             >
                 <Plus size={20} color="white" />
                 <Text className="ml-1 text-xs font-medium text-white">New</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+                className="flex-row items-center justify-center rounded-md bg-gray-100 px-2 py-2"
+                onPress={() => navigation.navigate('Settings')}
+            >
+                <Settings size={18} color="#374151" />
             </TouchableOpacity>
         </View>
       </View>
