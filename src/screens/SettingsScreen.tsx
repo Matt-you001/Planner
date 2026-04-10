@@ -31,7 +31,7 @@ export default function SettingsScreen() {
         // Schedule reminders
         try {
             await Notifications.scheduleNotificationAsync({
-                content: { title: "Review your day", body: "How did today go? Take a moment to track your progress.", data: { screen: 'Dashboard' } },
+                content: { title: "Review your day", body: "How did today go? Take a moment to track your progress.", data: { screen: 'Home' } },
                 trigger: { 
                     type: Notifications.SchedulableTriggerInputTypes.DAILY,
                     hour: 22, 
@@ -39,7 +39,7 @@ export default function SettingsScreen() {
                 },
             });
             await Notifications.scheduleNotificationAsync({
-                content: { title: "Last chance to review", body: "Don't break your streak! Mark today's activities.", data: { screen: 'Dashboard' } },
+                content: { title: "Last chance to review", body: "Don't break your streak! Mark today's activities.", data: { screen: 'Home' } },
                 trigger: { 
                     type: Notifications.SchedulableTriggerInputTypes.DAILY,
                     hour: 23, 

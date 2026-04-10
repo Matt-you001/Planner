@@ -3,7 +3,7 @@ import './global.css';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { Home, GanttChart, LayoutDashboard, Bot } from 'lucide-react-native';
+import { Home, GanttChart } from 'lucide-react-native';
 import { AuthProvider } from './src/context/AuthContext';
 import { CelebrationProvider } from './src/context/CelebrationContext';
 import DashboardScreen from './src/screens/DashboardScreen';
@@ -21,7 +21,7 @@ import * as Notifications from 'expo-notifications';
 import { launchApp } from './src/services/InstalledApps';
 import { Linking, Platform } from 'react-native';
 
-import HomeScreen from './src/screens/HomeScreen';
+import SignUpScreen from './src/screens/SignUp';
 
 import * as TaskManager from 'expo-task-manager';
 import * as BackgroundFetch from 'expo-background-fetch';
@@ -67,16 +67,9 @@ function TabNavigator() {
     >
       <Tab.Screen 
         name="Home" 
-        component={HomeScreen}
+        component={DashboardScreen}
         options={{
           tabBarIcon: ({ color, size }) => <Home color={color} size={size} />,
-        }}
-      />
-      <Tab.Screen 
-        name="Dashboard" 
-        component={DashboardScreen} 
-        options={{
-          tabBarIcon: ({ color, size }) => <LayoutDashboard color={color} size={size} />,
         }}
       />
       <Tab.Screen 
@@ -183,6 +176,7 @@ export default function App() {
       <CelebrationProvider>
         <NavigationContainer>
           <RootStack.Navigator screenOptions={{ headerShown: false }}>
+            <RootStack.Screen name="SignUp" component={SignUpScreen} />
             <RootStack.Screen name="MainTabs" component={TabNavigator} />
             <RootStack.Screen name="CreatePlan" component={CreatePlanScreen} />
             <RootStack.Screen name="CreateTask" component={CreateTaskScreen} />

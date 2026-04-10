@@ -9,7 +9,7 @@ import type { System, Task, WithId, Goal, JournalEntry, JournalMood } from '../l
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DataService } from '../lib/DataService';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen } from 'lucide-react-native';
+import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen, Settings } from 'lucide-react-native';
 import { useCelebration } from '../context/CelebrationContext';
 
 type Action = WithId<System> | WithId<Task>;
@@ -219,10 +219,16 @@ export default function DashboardScreen() {
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
       <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
         <View>
-            <Text className="text-2xl font-bold text-gray-900">Today's Dashboard</Text>
+            <Text className="text-2xl font-bold text-gray-900">Home</Text>
             <Text className="text-sm text-gray-500">Your upcoming activities and one-off tasks.</Text>
         </View>
         <View className="flex-row gap-2">
+            <TouchableOpacity
+                className="flex-row items-center justify-center rounded-md bg-gray-100 px-2 py-2"
+                onPress={() => navigation.navigate('Settings')}
+            >
+                <Settings size={18} color="#374151" />
+            </TouchableOpacity>
             <TouchableOpacity  
                 className="flex-row items-center justify-center rounded-md bg-amber-500 px-2 py-2"
                 onPress={() => {
