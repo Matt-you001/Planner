@@ -15,9 +15,11 @@ import { Platform, Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { auth } from '../firebase/index';
 import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import { BillingService } from '../lib/BillingService';
 // import * as AppleAuthentication from 'expo-apple-authentication';
 
 const GOOGLE_WEB_CLIENT_ID = '1081960231146-12en6go2743j8tq496kem93hi26g4tbd.apps.googleusercontent.com';
+const SUBSCRIPTION_CACHE_KEY = 'subscriptionTierCache';
 
 interface AuthContextType {
   user: User | null;
@@ -28,8 +30,11 @@ interface AuthContextType {
   signInWithEmail: (email: string, pass: string) => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   logout: () => Promise<void>;
+  isSubscriptionLoading: boolean;
   subscriptionTier: 'free' | 'premium';
-  upgradeToPremium: () => void;
+  upgradeToPremium: () => Promise<void>;
+  restorePremiumPurchases: () => Promise<void>;
+  refreshSubscriptionStatus: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType>({ 
@@ -41,13 +46,17 @@ const AuthContext = createContext<AuthContextType>({
   signInWithEmail: async () => {},
   resetPassword: async () => {},
   logout: async () => {},
+  isSubscriptionLoading: false,
   subscriptionTier: 'free',
-  upgradeToPremium: () => {}
+  upgradeToPremium: async () => {},
+  restorePremiumPurchases: async () => {},
+  refreshSubscriptionStatus: async () => {}
 });
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
   const [subscriptionTier, setSubscriptionTier] = useState<'free' | 'premium'>('free');
 
   useEffect(() => {
@@ -58,15 +67,125 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     // Load subscription status from storage
-    AsyncStorage.getItem('subscriptionTier').then(val => {
+    AsyncStorage.getItem(SUBSCRIPTION_CACHE_KEY).then(val => {
         if (val === 'premium') setSubscriptionTier('premium');
     });
   }, []);
 
-  const upgradeToPremium = () => {
-    // In a real app, this would trigger a purchase flow
-    setSubscriptionTier('premium');
-    AsyncStorage.setItem('subscriptionTier', 'premium');
+  const applySubscriptionTier = async (tier: 'free' | 'premium') => {
+    setSubscriptionTier(tier);
+    await AsyncStorage.setItem(SUBSCRIPTION_CACHE_KEY, tier);
+  };
+
+  const syncSubscriptionFromRevenueCat = async (currentUser: User | null) => {
+    if (!currentUser || !BillingService.isSupported()) {
+      await applySubscriptionTier('free');
+      return;
+    }
+
+    if (!BillingService.isConfiguredForCurrentPlatform()) {
+      await applySubscriptionTier('free');
+      return;
+    }
+
+    setIsSubscriptionLoading(true);
+    try {
+      const customerInfo = await BillingService.syncUser(currentUser.uid);
+      await applySubscriptionTier(BillingService.hasPremium(customerInfo) ? 'premium' : 'free');
+    } catch (error) {
+      console.error('Failed to sync subscription status', error);
+    } finally {
+      setIsSubscriptionLoading(false);
+    }
+  };
+
+  const refreshSubscriptionStatus = async () => {
+    if (!user) return;
+    await syncSubscriptionFromRevenueCat(user);
+  };
+
+  const upgradeToPremium = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in before starting a subscription.');
+      return;
+    }
+
+    if (!BillingService.isSupported()) {
+      Alert.alert('Not Supported Here', 'Subscriptions can only be purchased from the mobile app on iOS or Android.');
+      return;
+    }
+
+    if (!BillingService.isConfiguredForCurrentPlatform()) {
+      Alert.alert(
+        'RevenueCat Setup Needed',
+        'Add your RevenueCat API key to the app environment before testing real subscriptions.'
+      );
+      return;
+    }
+
+    setIsSubscriptionLoading(true);
+    try {
+      await BillingService.initialize(user.uid);
+      // Let an Android Alert finish dismissing before presenting RevenueCat's native paywall.
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const customerInfo = await BillingService.presentPremiumPaywall();
+      const hasPremium = BillingService.hasPremium(customerInfo);
+      await applySubscriptionTier(hasPremium ? 'premium' : 'free');
+
+      if (hasPremium) {
+        Alert.alert('Premium Activated', 'Your premium subscription is now active.');
+      }
+    } catch (error: any) {
+      console.error('Premium purchase failed', error);
+
+      if (error?.userCancelled) {
+        return;
+      }
+
+      Alert.alert('Purchase Failed', error?.message || 'We could not complete the premium purchase.');
+    } finally {
+      setIsSubscriptionLoading(false);
+    }
+  };
+
+  const restorePremiumPurchases = async () => {
+    if (!user) {
+      Alert.alert('Sign In Required', 'Please sign in before restoring purchases.');
+      return;
+    }
+
+    if (!BillingService.isSupported()) {
+      Alert.alert('Not Supported Here', 'Purchase restore is only available on iOS or Android.');
+      return;
+    }
+
+    if (!BillingService.isConfiguredForCurrentPlatform()) {
+      Alert.alert(
+        'RevenueCat Setup Needed',
+        'Add your RevenueCat API key to the app environment before restoring purchases.'
+      );
+      return;
+    }
+
+    setIsSubscriptionLoading(true);
+    try {
+      await BillingService.initialize(user.uid);
+      const customerInfo = await BillingService.restorePurchases();
+      const hasPremium = BillingService.hasPremium(customerInfo);
+      await applySubscriptionTier(hasPremium ? 'premium' : 'free');
+
+      Alert.alert(
+        hasPremium ? 'Purchases Restored' : 'No Active Premium Found',
+        hasPremium
+          ? 'Your premium subscription has been restored successfully.'
+          : 'We could not find an active premium subscription to restore.'
+      );
+    } catch (error: any) {
+      console.error('Restore purchases failed', error);
+      Alert.alert('Restore Failed', error?.message || 'We could not restore purchases right now.');
+    } finally {
+      setIsSubscriptionLoading(false);
+    }
   };
 
   // Auth Methods
@@ -187,8 +306,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (Platform.OS !== 'web') {
         await GoogleSignin.signOut();
       }
+      if (BillingService.isSupported()) {
+        await BillingService.logout();
+      }
       await signOut(auth);
       setUser(null);
+      await applySubscriptionTier('free');
     } catch (error) {
       console.error("Sign Out Error", error);
     }
@@ -209,10 +332,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       
       if (currentUser) {
         setUser(currentUser);
+        syncSubscriptionFromRevenueCat(currentUser);
         setIsLoading(false);
       } else {
         // User is signed out
         setUser(null);
+        applySubscriptionTier('free');
         setIsLoading(false);
       }
     });
@@ -242,8 +367,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       signInWithEmail,
       resetPassword,
       logout,
+      isSubscriptionLoading,
       subscriptionTier,
-      upgradeToPremium
+      upgradeToPremium,
+      restorePremiumPurchases,
+      refreshSubscriptionStatus
     }}>
       {children}
     </AuthContext.Provider>

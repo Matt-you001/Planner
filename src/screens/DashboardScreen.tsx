@@ -9,19 +9,19 @@ import type { System, Task, WithId, Goal, JournalEntry, JournalMood } from '../l
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DataService } from '../lib/DataService';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen, Settings } from 'lucide-react-native';
+import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen, UserCircle } from 'lucide-react-native';
 import { useCelebration } from '../context/CelebrationContext';
 
 type Action = WithId<System> | WithId<Task>;
 
 export default function DashboardScreen() {
   const navigation = useNavigation<any>();
-  const { user, isLoading: isAuthLoading, logout } = useAuth();
+  const { user, isLoading: isAuthLoading, logout, subscriptionTier, upgradeToPremium } = useAuth();
   const { celebrate } = useCelebration();
   const today = format(new Date(), 'yyyy-MM-dd');
 
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [systems, setSystems] = useState<System[]>([]);
+  const [tasks, setTasks] = useState<WithId<Task>[]>([]);
+  const [systems, setSystems] = useState<WithId<System>[]>([]);
   const [goals, setGoals] = useState<WithId<Goal>[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
@@ -215,17 +215,42 @@ export default function DashboardScreen() {
     }
   };
 
+  const promptPremium = (feature: string) => {
+    Alert.alert(
+      'Premium Feature',
+      `${feature} is available only for Premium subscribers.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Upgrade', onPress: upgradeToPremium }
+      ]
+    );
+  };
+
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
-      <View className="flex-row items-center justify-between px-4 py-4 border-b border-gray-200">
-        <View>
-            <Text className="text-2xl font-bold text-gray-900">Home</Text>
-            <Text className="text-sm text-gray-500">Your upcoming activities.</Text>
+      <View className="border-b border-gray-200 px-4 py-4">
+        <View className="flex-row items-center justify-between">
+          <View className="min-w-0 flex-1 pr-3">
+              <Text className="text-2xl font-bold text-gray-900">Home</Text>
+              <Text className="text-sm text-gray-500" numberOfLines={1}>Your upcoming activities and one-off tasks.</Text>
+          </View>
+          <TouchableOpacity
+              accessibilityRole="button"
+              accessibilityLabel="Open profile and settings"
+              className="h-10 w-10 items-center justify-center rounded-full border border-sky-200 bg-sky-50"
+              onPress={() => navigation.navigate('Settings')}
+          >
+              <UserCircle size={24} color="#0284c7" />
+          </TouchableOpacity>
         </View>
-        <View className="flex-row gap-2">
+        <View className="mt-3 flex-row justify-end gap-2">
             <TouchableOpacity  
                 className="flex-row items-center justify-center rounded-md bg-amber-500 px-2 py-2"
                 onPress={() => {
+                    if (subscriptionTier === 'free') {
+                      promptPremium('Journaling');
+                      return;
+                    }
                     setSelectedGoalId('');
                     setJournalModalVisible(true);
                 }}
@@ -239,12 +264,6 @@ export default function DashboardScreen() {
             >
                 <Plus size={20} color="white" />
                 <Text className="ml-1 text-xs font-medium text-white">New</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-                className="flex-row items-center justify-center rounded-md bg-gray-100 px-2 py-2"
-                onPress={() => navigation.navigate('Settings')}
-            >
-                <Settings size={18} color="#374151" />
             </TouchableOpacity>
         </View>
       </View>
@@ -277,6 +296,10 @@ export default function DashboardScreen() {
           <View className="mb-2 flex-row items-center justify-between">
             <Text className="text-sm font-bold text-gray-700">Today's Journal</Text>
             <TouchableOpacity onPress={() => {
+              if (subscriptionTier === 'free') {
+                promptPremium('Journaling');
+                return;
+              }
               setSelectedGoalId('');
               setJournalModalVisible(true);
             }}>
@@ -359,6 +382,10 @@ export default function DashboardScreen() {
                         <TouchableOpacity 
                             className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
                             onPress={() => {
+                                if (subscriptionTier === 'free') {
+                                    promptPremium('Create a Plan');
+                                    return;
+                                }
                                 setModalVisible(false);
                                 setShowCreatePlanOptions(false);
                                 navigation.navigate('CreatePlan', { type: 'isolate' });
@@ -388,6 +415,10 @@ export default function DashboardScreen() {
                         <TouchableOpacity 
                             className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
                             onPress={() => {
+                                if (subscriptionTier === 'free') {
+                                    promptPremium('Build a Habit');
+                                    return;
+                                }
                                 setModalVisible(false);
                                 navigation.navigate('CreatePlan', { type: 'habit' });
                             }}
