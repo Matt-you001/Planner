@@ -1,6 +1,6 @@
 import { Platform } from 'react-native';
 import Purchases, { CustomerInfo, LOG_LEVEL, PurchasesOffering, PurchasesPackage } from 'react-native-purchases';
-import RevenueCatUI from 'react-native-purchases-ui';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 
 const REVENUECAT_GOOGLE_API_KEY =
   process.env.EXPO_PUBLIC_RC_GOOGLE_API_KEY || 'goog_KAujLQOyAOVMaUMAvtooKwxXJlN';
@@ -94,7 +94,16 @@ export const BillingService = {
 
   hasPremium(customerInfo: CustomerInfo | null | undefined) {
     if (!customerInfo) return false;
-    return typeof customerInfo.entitlements.active[REVENUECAT_ENTITLEMENT_ID] !== 'undefined';
+
+    const activeEntitlementIds = Object.keys(customerInfo.entitlements.active);
+
+    // PlanApp currently has one subscription tier. Accept RevenueCat's configured
+    // entitlement key as well as any verified active subscription returned by the SDK.
+    return (
+      activeEntitlementIds.includes(REVENUECAT_ENTITLEMENT_ID) ||
+      activeEntitlementIds.length > 0 ||
+      customerInfo.activeSubscriptions.length > 0
+    );
   },
 
   async purchasePremium() {
@@ -121,8 +130,20 @@ export const BillingService = {
     }
 
     // RevenueCat selects the current offering configured in its dashboard.
-    await RevenueCatUI.presentPaywall({ displayCloseButton: true });
-    return Purchases.getCustomerInfo();
+    const paywallResult = await RevenueCatUI.presentPaywall({ displayCloseButton: true });
+
+    if (paywallResult === PAYWALL_RESULT.ERROR) {
+      throw new Error('RevenueCat could not complete the purchase. Please use Restore Purchases if Google Play charged the account.');
+    }
+
+    await Purchases.invalidateCustomerInfoCache();
+    const customerInfo = await Purchases.getCustomerInfo();
+
+    console.log('RevenueCat paywall result', paywallResult);
+    console.log('RevenueCat active entitlements', Object.keys(customerInfo.entitlements.active));
+    console.log('RevenueCat active subscriptions', customerInfo.activeSubscriptions);
+
+    return customerInfo;
   },
 
   async restorePurchases() {
