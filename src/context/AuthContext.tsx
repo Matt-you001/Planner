@@ -20,6 +20,8 @@ import { BillingService } from '../lib/BillingService';
 
 const GOOGLE_WEB_CLIENT_ID = '1081960231146-12en6go2743j8tq496kem93hi26g4tbd.apps.googleusercontent.com';
 const SUBSCRIPTION_CACHE_KEY = 'subscriptionTierCache';
+// Temporary testing override. Set to true when paid subscriptions are ready to enforce again.
+const PREMIUM_GATING_ENABLED = false;
 
 interface AuthContextType {
   user: User | null;
@@ -32,6 +34,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   isSubscriptionLoading: boolean;
   subscriptionTier: 'free' | 'premium';
+  isPremiumGatingEnabled: boolean;
   upgradeToPremium: () => Promise<void>;
   restorePremiumPurchases: () => Promise<void>;
   refreshSubscriptionStatus: () => Promise<void>;
@@ -47,7 +50,8 @@ const AuthContext = createContext<AuthContextType>({
   resetPassword: async () => {},
   logout: async () => {},
   isSubscriptionLoading: false,
-  subscriptionTier: 'free',
+  subscriptionTier: 'premium',
+  isPremiumGatingEnabled: PREMIUM_GATING_ENABLED,
   upgradeToPremium: async () => {},
   restorePremiumPurchases: async () => {},
   refreshSubscriptionStatus: async () => {}
@@ -57,7 +61,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSubscriptionLoading, setIsSubscriptionLoading] = useState(false);
-  const [subscriptionTier, setSubscriptionTier] = useState<'free' | 'premium'>('free');
+  const [subscriptionTier, setSubscriptionTier] = useState<'free' | 'premium'>(
+    PREMIUM_GATING_ENABLED ? 'free' : 'premium'
+  );
 
   useEffect(() => {
     GoogleSignin.configure({
@@ -66,6 +72,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   useEffect(() => {
+    if (!PREMIUM_GATING_ENABLED) {
+      setSubscriptionTier('premium');
+      AsyncStorage.setItem(SUBSCRIPTION_CACHE_KEY, 'premium');
+      return;
+    }
+
     // Load subscription status from storage
     AsyncStorage.getItem(SUBSCRIPTION_CACHE_KEY).then(val => {
         if (val === 'premium') setSubscriptionTier('premium');
@@ -73,11 +85,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const applySubscriptionTier = async (tier: 'free' | 'premium') => {
-    setSubscriptionTier(tier);
-    await AsyncStorage.setItem(SUBSCRIPTION_CACHE_KEY, tier);
+    const effectiveTier = PREMIUM_GATING_ENABLED ? tier : 'premium';
+    setSubscriptionTier(effectiveTier);
+    await AsyncStorage.setItem(SUBSCRIPTION_CACHE_KEY, effectiveTier);
   };
 
   const syncSubscriptionFromRevenueCat = async (currentUser: User | null) => {
+    if (!PREMIUM_GATING_ENABLED) {
+      await applySubscriptionTier('premium');
+      return;
+    }
+
     if (!currentUser || !BillingService.isSupported()) {
       await applySubscriptionTier('free');
       return;
@@ -369,6 +387,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       logout,
       isSubscriptionLoading,
       subscriptionTier,
+      isPremiumGatingEnabled: PREMIUM_GATING_ENABLED,
       upgradeToPremium,
       restorePremiumPurchases,
       refreshSubscriptionStatus
