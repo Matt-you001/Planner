@@ -11,6 +11,7 @@ import PlansScreen from './src/screens/PlansScreen';
 import GoalDetailsScreen from './src/screens/GoalDetailsScreen';
 import CreatePlanScreen from './src/screens/CreatePlanScreen';
 import CreateTaskScreen from './src/screens/CreateTaskScreen';
+import OrganizeDayScreen from './src/screens/OrganizeDayScreen';
 import PlanSetupScreen from './src/screens/PlanSetupScreen';
 import PlanIsolateScreen from './src/screens/PlanIsolateScreen';
 import PlanStackScreen from './src/screens/PlanStackScreen';
@@ -180,6 +181,7 @@ export default function App() {
             <RootStack.Screen name="MainTabs" component={TabNavigator} />
             <RootStack.Screen name="CreatePlan" component={CreatePlanScreen} />
             <RootStack.Screen name="CreateTask" component={CreateTaskScreen} />
+            <RootStack.Screen name="OrganizeDay" component={OrganizeDayScreen} />
             <RootStack.Screen name="PlanSetup" component={PlanSetupScreen} />
             <RootStack.Screen name="PlanIsolate" component={PlanIsolateScreen} />
             <RootStack.Screen name="PlanStack" component={PlanStackScreen} />

@@ -9,7 +9,7 @@ import type { System, Task, WithId, Goal, JournalEntry, JournalMood } from '../l
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { DataService } from '../lib/DataService';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
-import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen, UserCircle } from 'lucide-react-native';
+import { Plus, X, Calendar, ClipboardList, Clock, Zap, BookOpen, UserCircle, ListTodo } from 'lucide-react-native';
 import { useCelebration } from '../context/CelebrationContext';
 
 type Action = WithId<System> | WithId<Task>;
@@ -378,9 +378,9 @@ export default function DashboardScreen() {
 
                 {showCreatePlanOptions ? (
                     // Sub-Options for "Create a Plan"
-                    <View className="flex-row gap-4">
-                        <TouchableOpacity 
-                            className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
+                    <View className="gap-3">
+                        <TouchableOpacity
+                            className="flex-row items-center rounded-xl border border-gray-200 bg-gray-50 p-4 active:bg-gray-100"
                             onPress={() => {
                                 if (subscriptionTier === 'free') {
                                     promptPremium('Create a Plan');
@@ -391,22 +391,51 @@ export default function DashboardScreen() {
                                 navigation.navigate('CreatePlan', { type: 'isolate' });
                             }}
                         >
-                            <ClipboardList size={32} color="#0ea5e9" className="mb-2" />
-                            <Text className="font-semibold text-gray-900 text-center">Create Plan</Text>
-                            <Text className="text-xs text-gray-400 text-center mt-1">(Isolate Activities)</Text>
+                            <View className="h-11 w-11 items-center justify-center rounded-full bg-sky-100">
+                                <ClipboardList size={24} color="#0284c7" />
+                            </View>
+                            <View className="ml-4 flex-1">
+                                <Text className="font-semibold text-gray-900">Create Plan</Text>
+                                <Text className="mt-1 text-xs text-gray-500">Build activities around a specific goal.</Text>
+                            </View>
                         </TouchableOpacity>
 
-                        <TouchableOpacity 
-                            className="flex-1 items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-6 active:bg-gray-100"
+                        <TouchableOpacity
+                            className="flex-row items-center rounded-xl border border-emerald-200 bg-emerald-50 p-4 active:bg-emerald-100"
+                            onPress={() => {
+                                if (subscriptionTier === 'free') {
+                                    promptPremium('Organize My Day');
+                                    return;
+                                }
+                                setModalVisible(false);
+                                setShowCreatePlanOptions(false);
+                                navigation.navigate('OrganizeDay');
+                            }}
+                        >
+                            <View className="h-11 w-11 items-center justify-center rounded-full bg-emerald-100">
+                                <ListTodo size={24} color="#047857" />
+                            </View>
+                            <View className="ml-4 flex-1">
+                                <Text className="font-semibold text-emerald-950">Organize</Text>
+                                <Text className="mt-1 text-xs text-emerald-700">Arrange today's list into a timed schedule.</Text>
+                            </View>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            className="flex-row items-center rounded-xl border border-gray-200 bg-gray-50 p-4 active:bg-gray-100"
                             onPress={() => {
                                 setModalVisible(false);
                                 setShowCreatePlanOptions(false);
                                 navigation.navigate('CreateTask');
                             }}
                         >
-                            <Clock size={32} color="#0ea5e9" className="mb-2" />
-                            <Text className="font-semibold text-gray-900 text-center">Set Reminder</Text>
-                            <Text className="text-xs text-gray-400 text-center mt-1">(One-time Task)</Text>
+                            <View className="h-11 w-11 items-center justify-center rounded-full bg-sky-100">
+                                <Clock size={24} color="#0284c7" />
+                            </View>
+                            <View className="ml-4 flex-1">
+                                <Text className="font-semibold text-gray-900">Set Reminder</Text>
+                                <Text className="mt-1 text-xs text-gray-500">Schedule a one-time activity.</Text>
+                            </View>
                         </TouchableOpacity>
                     </View>
                 ) : (

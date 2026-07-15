@@ -27,11 +27,23 @@ const NextBestActionSchema = z.object({
   tone: z.enum(['commend', 'encourage', 'motivate', 'steady']).optional()
 });
 
+const OrganizedDaySchema = z.object({
+  summary: z.string().optional(),
+  activities: z.array(z.object({
+    sourceId: z.string(),
+    title: z.string().min(1),
+    durationMinutes: z.number().int().min(5).max(240),
+    priority: z.enum(['High', 'Medium', 'Low']),
+    reason: z.string().optional()
+  })).min(1)
+});
+
 export type SuggestHabitStackOutput = z.infer<typeof SuggestHabitStackOutputSchema>;
 export type NextBestAction = z.infer<typeof NextBestActionSchema>;
+export type OrganizedDay = z.infer<typeof OrganizedDaySchema>;
 
 type OnlineAiPayload = {
-  type: 'habit-stack' | 'habit-list' | 'next-best-action';
+  type: 'habit-stack' | 'habit-list' | 'next-best-action' | 'organize-day';
   goalDescription: string;
   context?: Record<string, unknown>;
 };
@@ -55,6 +67,9 @@ const hasOnlineAi = () => Boolean(AI_API_URL);
 async function callOnlineAi<T>(payload: OnlineAiPayload, schema: z.ZodSchema<T>): Promise<T | null> {
   if (!AI_API_URL) return null;
 
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+  const timeoutId = controller ? setTimeout(() => controller.abort(), 6500) : null;
+
   try {
     const idToken = auth.currentUser ? await auth.currentUser.getIdToken() : null;
     const response = await fetch(AI_API_URL, {
@@ -64,6 +79,7 @@ async function callOnlineAi<T>(payload: OnlineAiPayload, schema: z.ZodSchema<T>)
         ...(AI_API_KEY ? { Authorization: `Bearer ${AI_API_KEY}` } : {}),
         ...(idToken ? { 'X-Firebase-Auth': idToken } : {}),
       },
+      ...(controller ? { signal: controller.signal } : {}),
       body: JSON.stringify(payload),
     });
 
@@ -76,15 +92,37 @@ async function callOnlineAi<T>(payload: OnlineAiPayload, schema: z.ZodSchema<T>)
   } catch (error) {
     console.warn('Online AI request failed, falling back to local suggestions.', error);
     return null;
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
   }
+}
+
+function normalizeGoalText(goalDescription: string) {
+  return goalDescription.trim().replace(/\s+/g, ' ');
+}
+
+function cleanGoalLabel(goalDescription: string) {
+  return normalizeGoalText(goalDescription).replace(/^(to\s+)/i, '').trim();
+}
+
+function titleCase(value: string) {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function extractFocusArea(goalDescription: string) {
+  const cleaned = cleanGoalLabel(goalDescription);
+  const withoutArticles = cleaned.replace(/\b(a|an|the|my|your)\b/gi, '').trim();
+  return withoutArticles || cleaned || 'your goal';
 }
 
 function localHabitStack(goalDescription: string): SuggestHabitStackOutput {
   const goal = goalDescription.toLowerCase();
-  const cleanGoal = goalDescription.trim();
-  const shortGoal = cleanGoal.replace(/^(to\s+)/i, '').replace(/\s+/g, ' ').trim();
+  const shortGoal = cleanGoalLabel(goalDescription);
   const startsWithActionVerb = /^(build|create|launch|start|finish|learn|study|write|exercise|train|save|budget|design|plan|practice|read|improve|grow|cook|clean|organize|develop)\b/i.test(shortGoal);
   const goalAction = startsWithActionVerb ? shortGoal : `work on ${shortGoal}`;
+  const focusArea = extractFocusArea(goalDescription);
 
   if (goal.includes('health') || goal.includes('fit') || goal.includes('weight') || goal.includes('run') || goal.includes('exercise')) {
     return {
@@ -135,7 +173,7 @@ function localHabitStack(goalDescription: string): SuggestHabitStackOutput {
     return {
       trigger: { title: "After I sit down for my focused work block", description: "Use a repeatable work session as the cue." },
       response: { title: `Review the next milestone for ${shortGoal}`, description: "Start by getting clear on the next concrete step." },
-      stacked: { title: "Complete one small planning or execution task", description: "Momentum grows when the next move is specific and doable." },
+      stacked: { title: `Complete one small task that clearly moves ${focusArea} forward`, description: "Momentum grows when the next move is specific and doable." },
       reward: { title: "Record what moved forward before taking a break", description: "Noticing progress makes the habit easier to repeat." }
     };
   }
@@ -150,17 +188,17 @@ function localHabitStack(goalDescription: string): SuggestHabitStackOutput {
   }
 
   return {
-    trigger: { title: "After I finish my first routine task of the day", description: "Use an anchor that already happens consistently." },
-    response: { title: `${goalAction.charAt(0).toUpperCase()}${goalAction.slice(1)} for 10 focused minutes`, description: "A short, repeatable version of the goal is easier to sustain." },
-    stacked: { title: `Prepare the next step for ${shortGoal}`, description: "Lining up tomorrow's next move keeps the habit alive." },
-    reward: { title: "Mark the session complete and take a short break", description: "A quick reward helps reinforce consistency." }
+    trigger: { title: "After I finish my usual morning reset", description: "Attach the routine to something that already happens without effort." },
+    response: { title: `${goalAction.charAt(0).toUpperCase()}${goalAction.slice(1)} for one focused round`, description: "A defined, low-friction session is easier to repeat than an open-ended ambition." },
+    stacked: { title: `Leave the next step for ${focusArea} ready before I stop`, description: "Preparing the next move makes it easier to restart tomorrow." },
+    reward: { title: "Log the win and take a short intentional break", description: "A visible close to the session reinforces the habit loop." }
   };
 }
 
 function localHabitList(goalDescription: string): string[] {
   const goal = goalDescription.toLowerCase();
-  const cleanGoal = goalDescription.trim();
-  const shortGoal = cleanGoal.replace(/^(to\s+)/i, '').replace(/\s+/g, ' ').trim();
+  const shortGoal = cleanGoalLabel(goalDescription);
+  const focusArea = titleCase(extractFocusArea(goalDescription));
 
   if (goal.includes('health') || goal.includes('fit') || goal.includes('run')) {
     return [
@@ -233,21 +271,46 @@ function localHabitList(goalDescription: string): string[] {
   }
 
   return [
-    `Define the next concrete milestone for ${shortGoal}`,
-    `Do one focused task that makes ${shortGoal} move forward today`,
-    `Prepare the tools, materials, or notes you need for the next session`,
-    `Review what is blocking progress on ${shortGoal} and remove one obstacle`,
-    "Capture one short note about what worked before you stop"
+    `Write down the one outcome that would make ${focusArea} feel meaningfully closer today`,
+    `Complete the smallest action that creates visible progress on ${shortGoal}`,
+    `Gather the exact materials, information, or tools needed for the next focused session`,
+    `Find one blocker slowing ${shortGoal} down and clear it before the day ends`,
+    `Finish by logging what moved forward and what should happen next`
   ];
 }
 
 function localNextBestAction(goalDescription: string, context?: Record<string, unknown>): NextBestAction {
   const streak = typeof context?.completedCount === 'number' ? context.completedCount : 0;
   const recentProgress = typeof context?.recentProgress === 'number' ? context.recentProgress : 0;
+  const successRate = typeof context?.successRate === 'number' ? context.successRate : recentProgress;
   const completedActions = typeof context?.completedActions === 'number' ? context.completedActions : 0;
   const pendingActions = typeof context?.pendingActions === 'number' ? context.pendingActions : 0;
   const habitStage = typeof context?.habitStage === 'string' ? context.habitStage : 'Intention';
   const journalEntries = typeof context?.journalEntries === 'number' ? context.journalEntries : 0;
+
+  if (successRate >= 85 && completedActions >= 3) {
+    return {
+      title: `Protect the momentum you have built around ${goalDescription}`,
+      reason: "Your success rate is strong, so the smartest next move is to reinforce what is already working and stretch carefully.",
+      suggestedDuration: "10-20 min",
+      confidence: 0.84,
+      achievementStage: habitStage,
+      tone: 'commend',
+      coachMessage: `You are performing well on this plan with a success rate around ${successRate}%. That deserves recognition. Keep the structure that is helping you win, then choose one next action that extends this momentum without making the system fragile.`
+    };
+  }
+
+  if (successRate >= 60 && pendingActions > 0) {
+    return {
+      title: `Finish the highest-impact remaining action for ${goalDescription}`,
+      reason: "Your success rate shows solid traction, and completing one more meaningful action will convert progress into a stronger result.",
+      suggestedDuration: "10-15 min",
+      confidence: 0.8,
+      achievementStage: habitStage,
+      tone: 'motivate',
+      coachMessage: `You are making real progress with a success rate near ${successRate}%. This is a good moment to stay focused, close the most important remaining action, and turn a good run into a strong one.`
+    };
+  }
 
   if (recentProgress < 30) {
     return {
@@ -258,8 +321,8 @@ function localNextBestAction(goalDescription: string, context?: Record<string, u
       achievementStage: habitStage,
       tone: 'encourage',
       coachMessage: journalEntries > 0
-        ? `You are still in the ${habitStage} stage, and your journal shows you are paying attention. Keep the bar low today and win back momentum with one clear move.`
-        : `You are still in the ${habitStage} stage. Start small, remove friction, and let today's win rebuild confidence.`
+        ? `You are still in the ${habitStage} stage, and your journal shows you are paying attention. Your current success rate is about ${successRate}%, so keep the bar low today and win back momentum with one clear move.`
+        : `You are still in the ${habitStage} stage. Your current success rate is about ${successRate}%, so start small, remove friction, and let today's win rebuild confidence.`
     };
   }
 
@@ -314,7 +377,6 @@ export const AiService = {
 
     if (onlineResult) return onlineResult;
 
-    await new Promise(resolve => setTimeout(resolve, 600));
     return localHabitStack(goalDescription);
   },
 
@@ -329,7 +391,6 @@ export const AiService = {
 
     if (onlineResult) return onlineResult.suggestions;
 
-    await new Promise(resolve => setTimeout(resolve, 600));
     return localHabitList(goalDescription);
   },
 
@@ -345,7 +406,28 @@ export const AiService = {
 
     if (onlineResult) return onlineResult;
 
-    await new Promise(resolve => setTimeout(resolve, 400));
     return localNextBestAction(goalDescription, context);
+  },
+
+  async organizeDay(
+    activities: Array<{
+      id: string;
+      title: string;
+      durationMinutes: number;
+      priority: 'High' | 'Medium' | 'Low';
+    }>,
+    startTime: string
+  ): Promise<OrganizedDay | null> {
+    return callOnlineAi(
+      {
+        type: 'organize-day',
+        goalDescription: "Organize today's activities into a practical execution schedule.",
+        context: {
+          startTime,
+          activities
+        }
+      },
+      OrganizedDaySchema
+    );
   }
 };
