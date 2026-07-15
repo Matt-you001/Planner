@@ -282,14 +282,14 @@ export default function OrganizeDayScreen() {
   };
 
   return (
-    <SafeAreaView className="flex-1 bg-slate-50" edges={['top']}>
+    <SafeAreaView className="flex-1 bg-white" edges={['top', 'bottom']}>
       <View className="flex-row items-center border-b border-slate-200 bg-white px-4 py-4">
         <TouchableOpacity
           accessibilityLabel="Go back"
-          className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-slate-100"
+          className="mr-4 h-10 w-10 items-center justify-center rounded-full bg-sky-50"
           onPress={() => navigation.goBack()}
         >
-          <ArrowLeft size={22} color="#0f172a" />
+          <ArrowLeft size={22} color="#0284c7" />
         </TouchableOpacity>
         <View className="flex-1">
           <Text className="text-xl font-bold text-slate-900">Organize Today</Text>
@@ -299,15 +299,15 @@ export default function OrganizeDayScreen() {
 
       <ScrollView
         className="flex-1"
-        contentContainerClassName="px-4 pb-10 pt-4"
+        contentContainerClassName="bg-slate-50 px-4 pb-6 pt-4"
         keyboardShouldPersistTaps="handled"
       >
-        <View className="mb-5 overflow-hidden rounded-2xl bg-sky-700 p-5">
+        <View className="mb-5 overflow-hidden rounded-2xl bg-sky-500 p-5">
           <View className="mb-3 h-10 w-10 items-center justify-center rounded-full bg-white/20">
             <Sparkles size={21} color="white" />
           </View>
           <Text className="text-xl font-bold text-white">Turn your list into an executable day</Text>
-          <Text className="mt-2 text-sm leading-5 text-sky-100">
+          <Text className="mt-2 text-sm leading-5 text-white/90">
             Add what you need to do. PlanApp will prioritize the work, allocate focus time, and leave transition space between activities.
           </Text>
         </View>
@@ -373,7 +373,7 @@ export default function OrganizeDayScreen() {
           </View>
 
           <TouchableOpacity
-            className="mt-4 flex-row items-center justify-center rounded-xl bg-slate-900 py-3"
+            className="mt-4 flex-row items-center justify-center rounded-xl bg-sky-500 py-3"
             onPress={addActivity}
           >
             <ListPlus size={18} color="white" />
@@ -420,7 +420,7 @@ export default function OrganizeDayScreen() {
             </View>
 
             <TouchableOpacity
-              className={`mt-4 flex-row items-center justify-center rounded-xl bg-sky-600 py-4 ${
+              className={`mt-4 flex-row items-center justify-center rounded-xl bg-amber-500 py-4 ${
                 isOrganizing ? 'opacity-70' : ''
               }`}
               disabled={isOrganizing}
@@ -461,22 +461,22 @@ export default function OrganizeDayScreen() {
                 </Text>
               </View>
               <TouchableOpacity
-                className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2"
+                className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2"
                 onPress={organizeActivities}
                 disabled={isOrganizing}
               >
                 {isOrganizing ? (
-                  <ActivityIndicator size="small" color="#0369a1" />
+                  <ActivityIndicator size="small" color="#b45309" />
                 ) : (
-                  <Text className="text-xs font-bold text-sky-700">Re-organize with AI</Text>
+                  <Text className="text-xs font-bold text-amber-700">Re-organize with AI</Text>
                 )}
               </TouchableOpacity>
             </View>
 
             {organizerNote ? (
-              <View className="mb-3 rounded-xl border border-sky-100 bg-sky-50 px-4 py-3">
-                <Text className="text-xs font-semibold uppercase tracking-wide text-sky-700">Planner's note</Text>
-                <Text className="mt-1 text-sm leading-5 text-sky-900">{organizerNote}</Text>
+              <View className="mb-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+                <Text className="text-xs font-semibold uppercase tracking-wide text-amber-700">Planner's note</Text>
+                <Text className="mt-1 text-sm leading-5 text-amber-900">{organizerNote}</Text>
               </View>
             ) : null}
 
@@ -492,53 +492,69 @@ export default function OrganizeDayScreen() {
             </TouchableOpacity>
 
             {schedule.map((activity, index) => (
-              <View key={activity.id}>
-                <View className="flex-row">
-                  <View className="w-20 items-center pt-4">
-                    <Text className="text-xs font-bold text-sky-700">
-                      {formatClock(activity.startMinutes)}
-                    </Text>
-                    <View className="mt-2 h-full w-px bg-sky-200" />
+              <View
+                key={activity.id}
+                className="mb-3 overflow-hidden rounded-xl border border-sky-100 bg-white"
+              >
+                <View className="flex-row items-center bg-sky-50 px-3 py-2.5">
+                  <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-amber-500">
+                    <Text className="font-bold text-white">{index + 1}</Text>
                   </View>
-                  <View className="mb-2 flex-1 rounded-2xl border border-slate-200 bg-white p-4">
-                    <View className="mb-3 flex-row items-start">
-                      <View className="mr-3 h-8 w-8 items-center justify-center rounded-full bg-sky-100">
-                        <Text className="font-bold text-sky-700">{index + 1}</Text>
-                      </View>
+                  <View className="flex-1">
+                    <Text className="text-xs font-semibold uppercase tracking-wide text-sky-700">
+                      {formatClock(activity.startMinutes)} - {formatClock(activity.endMinutes)}
+                    </Text>
+                  </View>
+                  <TouchableOpacity
+                    accessibilityLabel="Move activity earlier"
+                    className={`mr-2 rounded-lg border border-sky-200 bg-white p-2 ${index === 0 ? 'opacity-30' : ''}`}
+                    disabled={index === 0}
+                    onPress={() => moveActivity(index, -1)}
+                  >
+                    <ArrowUp size={16} color="#0284c7" />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    accessibilityLabel="Move activity later"
+                    className={`rounded-lg border border-sky-200 bg-white p-2 ${
+                      index === schedule.length - 1 ? 'opacity-30' : ''
+                    }`}
+                    disabled={index === schedule.length - 1}
+                    onPress={() => moveActivity(index, 1)}
+                  >
+                    <ArrowDown size={16} color="#0284c7" />
+                  </TouchableOpacity>
+                </View>
+
+                <View className="p-3">
+                  <TextInput
+                    className="border-b border-slate-200 pb-2 text-base font-bold text-slate-900"
+                    value={activity.title}
+                    onChangeText={title => updateActivity(activity.id, { title })}
+                  />
+
+                  <View className="mt-3 flex-row items-center">
+                    <View className="mr-3 flex-row items-center rounded-lg bg-slate-100 px-3 py-2">
+                      <Clock3 size={15} color="#0284c7" />
                       <TextInput
-                        className="flex-1 border-b border-slate-200 pb-2 text-base font-bold text-slate-900"
-                        value={activity.title}
-                        onChangeText={title => updateActivity(activity.id, { title })}
+                        className="ml-2 min-w-8 p-0 text-center font-bold text-slate-700"
+                        keyboardType="number-pad"
+                        maxLength={3}
+                        value={activity.duration}
+                        onChangeText={duration => updateActivity(activity.id, { duration })}
+                        onBlur={() =>
+                          updateActivity(activity.id, {
+                            duration: String(clampDuration(activity.duration))
+                          })
+                        }
                       />
+                      <Text className="ml-1 text-xs text-slate-500">min</Text>
                     </View>
 
-                    <View className="mb-3 flex-row items-center gap-3">
-                      <View className="flex-row items-center rounded-lg bg-slate-100 px-3 py-2">
-                        <Clock3 size={15} color="#475569" />
-                        <TextInput
-                          className="ml-2 min-w-10 p-0 text-center font-bold text-slate-700"
-                          keyboardType="number-pad"
-                          maxLength={3}
-                          value={activity.duration}
-                          onChangeText={duration => updateActivity(activity.id, { duration })}
-                          onBlur={() =>
-                            updateActivity(activity.id, {
-                              duration: String(clampDuration(activity.duration))
-                            })
-                          }
-                        />
-                        <Text className="ml-1 text-xs text-slate-500">min</Text>
-                      </View>
-                      <Text className="text-xs text-slate-500">
-                        Ends {formatClock(activity.endMinutes)}
-                      </Text>
-                    </View>
-
-                    <View className="mb-3 flex-row gap-2">
+                    <View className="flex-1 flex-row gap-1.5">
                       {PRIORITIES.map(priority => (
                         <TouchableOpacity
                           key={priority}
-                          className={`rounded-full border px-3 py-1.5 ${
+                          className={`flex-1 rounded-full border px-1 py-2 ${
                             activity.priority === priority
                               ? 'border-sky-500 bg-sky-50'
                               : 'border-slate-200 bg-white'
@@ -546,7 +562,7 @@ export default function OrganizeDayScreen() {
                           onPress={() => updateActivity(activity.id, { priority })}
                         >
                           <Text
-                            className={`text-xs font-semibold ${
+                            className={`text-center text-[11px] font-semibold ${
                               activity.priority === priority ? 'text-sky-700' : 'text-slate-500'
                             }`}
                           >
@@ -556,42 +572,21 @@ export default function OrganizeDayScreen() {
                       ))}
                     </View>
 
-                    <View className="flex-row justify-end gap-2">
-                      <TouchableOpacity
-                        accessibilityLabel="Move activity earlier"
-                        className={`rounded-lg border border-slate-200 p-2 ${index === 0 ? 'opacity-30' : ''}`}
-                        disabled={index === 0}
-                        onPress={() => moveActivity(index, -1)}
-                      >
-                        <ArrowUp size={17} color="#475569" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        accessibilityLabel="Move activity later"
-                        className={`rounded-lg border border-slate-200 p-2 ${
-                          index === schedule.length - 1 ? 'opacity-30' : ''
-                        }`}
-                        disabled={index === schedule.length - 1}
-                        onPress={() => moveActivity(index, 1)}
-                      >
-                        <ArrowDown size={17} color="#475569" />
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        accessibilityLabel="Remove activity"
-                        className="rounded-lg border border-red-100 bg-red-50 p-2"
-                        onPress={() => removeActivity(activity.id)}
-                      >
-                        <Trash2 size={17} color="#dc2626" />
-                      </TouchableOpacity>
-                    </View>
+                    <TouchableOpacity
+                      accessibilityLabel="Remove activity"
+                      className="ml-2 rounded-lg border border-red-100 bg-red-50 p-2"
+                      onPress={() => removeActivity(activity.id)}
+                    >
+                      <Trash2 size={16} color="#dc2626" />
+                    </TouchableOpacity>
                   </View>
-                </View>
-                {activity.breakMinutes > 0 ? (
-                  <View className="mb-2 ml-20 rounded-lg bg-amber-50 px-3 py-2">
-                    <Text className="text-xs font-medium text-amber-700">
-                      {activity.breakMinutes}-minute transition buffer
+
+                  {activity.breakMinutes > 0 ? (
+                    <Text className="mt-2 text-xs font-medium text-amber-700">
+                      Then allow a {activity.breakMinutes}-minute transition.
                     </Text>
-                  </View>
-                ) : null}
+                  ) : null}
+                </View>
               </View>
             ))}
 
@@ -611,25 +606,30 @@ export default function OrganizeDayScreen() {
               />
             </View>
 
-            <TouchableOpacity
-              className={`mt-4 flex-row items-center justify-center rounded-xl bg-emerald-600 py-4 ${
-                isSaving ? 'opacity-70' : ''
-              }`}
-              disabled={isSaving}
-              onPress={acceptSchedule}
-            >
-              {isSaving ? (
-                <ActivityIndicator color="white" />
-              ) : (
-                <>
-                  <Check size={20} color="white" />
-                  <Text className="ml-2 text-base font-bold text-white">Accept and Save Schedule</Text>
-                </>
-              )}
-            </TouchableOpacity>
           </View>
         ) : null}
       </ScrollView>
+
+      {hasOrganized && schedule.length > 0 ? (
+        <View className="border-t border-slate-200 bg-white px-4 py-3">
+          <TouchableOpacity
+            className={`flex-row items-center justify-center rounded-xl bg-sky-500 py-4 ${
+              isSaving ? 'opacity-70' : ''
+            }`}
+            disabled={isSaving}
+            onPress={acceptSchedule}
+          >
+            {isSaving ? (
+              <ActivityIndicator color="white" />
+            ) : (
+              <>
+                <Check size={20} color="white" />
+                <Text className="ml-2 text-base font-bold text-white">Accept and Save Schedule</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </View>
+      ) : null}
     </SafeAreaView>
   );
 }

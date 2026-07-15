@@ -401,7 +401,7 @@ export default function DashboardScreen() {
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            className="flex-row items-center rounded-xl border border-emerald-200 bg-emerald-50 p-4 active:bg-emerald-100"
+                            className="flex-row items-center rounded-xl border border-amber-200 bg-amber-50 p-4 active:bg-amber-100"
                             onPress={() => {
                                 if (subscriptionTier === 'free') {
                                     promptPremium('Organize My Day');
@@ -412,12 +412,12 @@ export default function DashboardScreen() {
                                 navigation.navigate('OrganizeDay');
                             }}
                         >
-                            <View className="h-11 w-11 items-center justify-center rounded-full bg-emerald-100">
-                                <ListTodo size={24} color="#047857" />
+                            <View className="h-11 w-11 items-center justify-center rounded-full bg-amber-100">
+                                <ListTodo size={24} color="#b45309" />
                             </View>
                             <View className="ml-4 flex-1">
-                                <Text className="font-semibold text-emerald-950">Organize</Text>
-                                <Text className="mt-1 text-xs text-emerald-700">Arrange today's list into a timed schedule.</Text>
+                                <Text className="font-semibold text-amber-950">Organize</Text>
+                                <Text className="mt-1 text-xs text-amber-700">Arrange today's list into a timed schedule.</Text>
                             </View>
                         </TouchableOpacity>
 
