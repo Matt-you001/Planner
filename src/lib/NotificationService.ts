@@ -56,8 +56,8 @@ export const NotificationService = {
           bypassDnd: true,
         });
 
-        // Set category to ALARM for full screen intent behavior (if supported)
-        await Notifications.setNotificationCategoryAsync('ALARM_ACTION', [
+        // Action buttons keep linked-app reminders useful without opening a full-screen activity.
+        await Notifications.setNotificationCategoryAsync('REMINDER_ACTION', [
           {
             identifier: 'OPEN_APP',
             buttonTitle: 'Open App',
@@ -82,7 +82,7 @@ export const NotificationService = {
           data: data, // Attach custom data (e.g. linkedApp)
           sound: true, // For iOS
           priority: Notifications.AndroidNotificationPriority.MAX, // For Android
-          categoryIdentifier: data?.linkedApp ? 'ALARM_ACTION' : undefined, // Only show buttons if app linked
+          categoryIdentifier: data?.linkedApp ? 'REMINDER_ACTION' : undefined, // Only show buttons if app linked
           autoDismiss: false, // Keep it visible until interaction
           sticky: true,
           vibrate: [0, 250, 250, 250], // Force vibration pattern here too

@@ -28,11 +28,14 @@
       "package": "com.planapp.app",
       "versionCode": 1,
       "permissions": [
+        "com.android.vending.BILLING",
         "QUERY_ALL_PACKAGES",
         "WAKE_LOCK",
         "FOREGROUND_SERVICE",
-        "SCHEDULE_EXACT_ALARM",
-        "USE_FULL_SCREEN_INTENT"
+        "SCHEDULE_EXACT_ALARM"
+      ],
+      "blockedPermissions": [
+        "android.permission.USE_FULL_SCREEN_INTENT"
       ]
     },
     "web": {
