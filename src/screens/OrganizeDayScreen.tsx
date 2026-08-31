@@ -13,12 +13,13 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
-import { format } from 'date-fns';
+import { addDays, format, isSameDay, startOfDay } from 'date-fns';
 import {
   ArrowDown,
   ArrowLeft,
   ArrowUp,
   Bell,
+  CalendarDays,
   Check,
   Clock3,
   ListPlus,
@@ -103,11 +104,14 @@ function buildSchedule(activities: OrganizerActivity[], startMinutes: number): S
 export default function OrganizeDayScreen() {
   const navigation = useNavigation<any>();
   const { user } = useAuth();
+  const [initialStart] = useState(getInitialStartTime);
   const [activities, setActivities] = useState<OrganizerActivity[]>([]);
   const [draftTitle, setDraftTitle] = useState('');
   const [draftDuration, setDraftDuration] = useState('30');
   const [draftPriority, setDraftPriority] = useState<Priority>('Medium');
-  const [dayStart, setDayStart] = useState(getInitialStartTime);
+  const [selectedDate, setSelectedDate] = useState<Date>(() => startOfDay(initialStart));
+  const [dayStart, setDayStart] = useState<Date>(initialStart);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [hasOrganized, setHasOrganized] = useState(false);
   const [remindersEnabled, setRemindersEnabled] = useState(true);
@@ -115,7 +119,12 @@ export default function OrganizeDayScreen() {
   const [organizerNote, setOrganizerNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
-  const today = format(new Date(), 'yyyy-MM-dd');
+  const dateValue = format(selectedDate, 'yyyy-MM-dd');
+  const dateLabel = isSameDay(selectedDate, new Date())
+    ? `Today, ${format(selectedDate, 'MMM d')}`
+    : isSameDay(selectedDate, addDays(new Date(), 1))
+      ? `Tomorrow, ${format(selectedDate, 'MMM d')}`
+      : format(selectedDate, 'EEE, MMM d, yyyy');
   const schedule = useMemo(
     () => buildSchedule(activities, minutesFromDate(dayStart)),
     [activities, dayStart]
@@ -177,7 +186,8 @@ export default function OrganizeDayScreen() {
           durationMinutes: clampDuration(activity.duration),
           priority: activity.priority
         })),
-        format(dayStart, 'HH:mm')
+        format(dayStart, 'HH:mm'),
+        dateValue
       );
 
       const currentById = new Map(activities.map(activity => [activity.id, activity]));
@@ -230,10 +240,38 @@ export default function OrganizeDayScreen() {
     setActivities(current => current.filter(activity => activity.id !== id));
   };
 
+  const openDatePicker = () => {
+    setShowTimePicker(false);
+    setShowDatePicker(true);
+  };
+
+  const openTimePicker = () => {
+    setShowDatePicker(false);
+    setShowTimePicker(true);
+  };
+
   const handleTimeChange = (event: any, selectedTime?: Date) => {
     setShowTimePicker(Platform.OS === 'ios');
     if (event.type === 'set' && selectedTime) {
       setDayStart(selectedTime);
+
+      const proposedStart = new Date(selectedDate);
+      proposedStart.setHours(selectedTime.getHours(), selectedTime.getMinutes(), 0, 0);
+      if (isSameDay(selectedDate, new Date()) && proposedStart.getTime() <= Date.now()) {
+        const tomorrow = startOfDay(addDays(new Date(), 1));
+        setSelectedDate(tomorrow);
+        Alert.alert(
+          'Scheduled for Tomorrow',
+          `${format(selectedTime, 'h:mm a')} has already passed today, so PlanApp moved this schedule to ${format(tomorrow, 'EEEE, MMMM d')}.`
+        );
+      }
+    }
+  };
+
+  const handleDateChange = (event: any, date?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (event.type === 'set' && date) {
+      setSelectedDate(startOfDay(date));
     }
   };
 
@@ -254,12 +292,22 @@ export default function OrganizeDayScreen() {
       return;
     }
 
+    const scheduledStart = new Date(selectedDate);
+    scheduledStart.setHours(dayStart.getHours(), dayStart.getMinutes(), 0, 0);
+    if (scheduledStart.getTime() <= Date.now()) {
+      Alert.alert(
+        'Choose a Future Date or Time',
+        'This schedule starts in the past. Select a later time today or choose a future date.'
+      );
+      return;
+    }
+
     setIsSaving(true);
     try {
       for (const activity of schedule) {
         await DataService.createTask(user.uid, {
           title: activity.title.trim(),
-          date: today,
+          date: dateValue,
           startTime: formatTimeValue(activity.startMinutes),
           endTime: formatTimeValue(activity.endMinutes),
           notes: `Organized activity: ${activity.duration} minutes, ${activity.priority.toLowerCase()} priority.`,
@@ -270,8 +318,8 @@ export default function OrganizeDayScreen() {
 
       Alert.alert(
         'Day Organized',
-        `${schedule.length} ${schedule.length === 1 ? 'activity has' : 'activities have'} been added to today.`,
-        [{ text: 'View Today', onPress: () => navigation.navigate('MainTabs', { screen: 'Home' }) }]
+        `${schedule.length} ${schedule.length === 1 ? 'activity has' : 'activities have'} been added to ${format(selectedDate, 'EEEE, MMMM d')}.`,
+        [{ text: 'View Home', onPress: () => navigation.navigate('MainTabs', { screen: 'Home' }) }]
       );
     } catch (error) {
       console.error('Failed to save organized day', error);
@@ -292,7 +340,7 @@ export default function OrganizeDayScreen() {
           <ArrowLeft size={22} color="#0284c7" />
         </TouchableOpacity>
         <View className="flex-1">
-          <Text className="text-xl font-bold text-slate-900">Organize Today</Text>
+          <Text className="text-xl font-bold text-slate-900">Organize a Day</Text>
           <Text className="text-xs text-slate-500">Build a realistic, editable time-block plan.</Text>
         </View>
       </View>
@@ -406,15 +454,31 @@ export default function OrganizeDayScreen() {
               </View>
             ))}
 
-            <View className="mt-3 flex-row items-center justify-between rounded-xl bg-sky-50 px-4 py-3">
-              <View>
-                <Text className="text-xs font-semibold uppercase text-sky-600">Start the day at</Text>
-                <Text className="mt-1 text-base font-bold text-sky-900">{format(dayStart, 'h:mm a')}</Text>
-              </View>
+            <View className="mt-3 rounded-xl bg-sky-50 px-4 py-3">
               <TouchableOpacity
-                className="rounded-lg border border-sky-200 bg-white px-4 py-2"
-                onPress={() => setShowTimePicker(true)}
+                className="flex-row items-center justify-between border-b border-sky-100 pb-3"
+                onPress={openDatePicker}
               >
+                <View className="flex-row items-center">
+                  <CalendarDays size={19} color="#0284c7" />
+                  <View className="ml-3">
+                    <Text className="text-xs font-semibold uppercase text-sky-600">Day to organize</Text>
+                    <Text className="mt-1 text-base font-bold text-sky-900">{dateLabel}</Text>
+                  </View>
+                </View>
+                <Text className="font-semibold text-sky-700">Change</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                className="mt-3 flex-row items-center justify-between"
+                onPress={openTimePicker}
+              >
+                <View className="flex-row items-center">
+                  <Clock3 size={19} color="#0284c7" />
+                  <View className="ml-3">
+                    <Text className="text-xs font-semibold uppercase text-sky-600">Start the day at</Text>
+                    <Text className="mt-1 text-base font-bold text-sky-900">{format(dayStart, 'h:mm a')}</Text>
+                  </View>
+                </View>
                 <Text className="font-semibold text-sky-700">Change</Text>
               </TouchableOpacity>
             </View>
@@ -439,6 +503,16 @@ export default function OrganizeDayScreen() {
               )}
             </TouchableOpacity>
           </View>
+        ) : null}
+
+        {showDatePicker ? (
+          <DateTimePicker
+            value={selectedDate}
+            mode="date"
+            minimumDate={startOfDay(new Date())}
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            onChange={handleDateChange}
+          />
         ) : null}
 
         {showTimePicker ? (
@@ -482,7 +556,18 @@ export default function OrganizeDayScreen() {
 
             <TouchableOpacity
               className="mb-3 flex-row items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
-              onPress={() => setShowTimePicker(true)}
+              onPress={openDatePicker}
+            >
+              <View className="flex-row items-center">
+                <CalendarDays size={19} color="#0369a1" />
+                <Text className="ml-2 font-semibold text-slate-700">Schedule date</Text>
+              </View>
+              <Text className="font-bold text-sky-700">{dateLabel}</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              className="mb-3 flex-row items-center justify-between rounded-xl border border-slate-200 bg-white px-4 py-3"
+              onPress={openTimePicker}
             >
               <View className="flex-row items-center">
                 <Clock3 size={19} color="#0369a1" />

@@ -185,7 +185,7 @@ export default function PlansScreen({ navigation }: any) {
                             </View>
                             <View className="ml-4 flex-1">
                                 <Text className="font-semibold text-amber-950">Organize</Text>
-                                <Text className="mt-1 text-xs text-amber-700">Arrange today's list into a timed schedule.</Text>
+                                <Text className="mt-1 text-xs text-amber-700">Arrange a day's list into a timed schedule.</Text>
                             </View>
                         </TouchableOpacity>
 

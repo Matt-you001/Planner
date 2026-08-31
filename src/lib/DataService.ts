@@ -26,6 +26,24 @@ const STORAGE_KEYS = {
 import { HABIT_THRESHOLDS, HabitStage } from './types';
 import * as Notifications from 'expo-notifications';
 
+const FIRESTORE_TIMEOUT_MS = 8000;
+
+const withTimeout = async <T,>(promise: Promise<T>, label: string, timeoutMs: number = FIRESTORE_TIMEOUT_MS): Promise<T> => {
+  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeoutHandle = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs);
+  });
+
+  try {
+    return await Promise.race([promise, timeoutPromise]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+};
+
 const toIsoString = (value: any): string | undefined => {
   if (!value) return undefined;
   if (typeof value === 'string') return value;
@@ -66,6 +84,9 @@ const normalizeJournalEntry = (id: string, data: any): JournalEntry => ({
   mood: data.mood,
   progress: typeof data.progress === 'number' ? data.progress : undefined,
 });
+
+type GoalProgressListener = (payload: { goalId: string; progress: number }) => void;
+const goalProgressListeners = new Set<GoalProgressListener>();
 
 // In-memory store that syncs with AsyncStorage
 class PersistentStore {
@@ -204,6 +225,13 @@ class PersistentStore {
 export const localStore = new PersistentStore();
 
 export const DataService = {
+  subscribeToGoalProgress(listener: GoalProgressListener) {
+    goalProgressListeners.add(listener);
+    return () => {
+      goalProgressListeners.delete(listener);
+    };
+  },
+
   async getGoalNotes(userId: string, goalId: string): Promise<JournalEntry[]> {
     if (this.isDemoMode()) {
       await localStore.init();
@@ -288,8 +316,8 @@ export const DataService = {
     if (item.notificationId) return;
 
     const [hours, minutes] = item.startTime.split(':').map(Number);
-    const triggerDate = new Date(item.date);
-    triggerDate.setHours(hours, minutes, 0, 0);
+    const [year, month, day] = item.date.split('-').map(Number);
+    const triggerDate = new Date(year, month - 1, day, hours, minutes, 0, 0);
 
     // If date is in past, don't schedule
     if (triggerDate.getTime() < Date.now()) return;
@@ -409,10 +437,10 @@ export const DataService = {
     }
 
     try {
-      const ref = await addDoc(collection(firestore, 'users', userId, 'goals'), {
+      const ref = await withTimeout(addDoc(collection(firestore, 'users', userId, 'goals'), {
         ...goalData,
         createdAt: serverTimestamp() // Use server timestamp for real DB
-      });
+      }), 'createGoal');
       const createdGoal = { ...goalData, id: ref.id };
       await localStore.init();
       localStore.goals = [createdGoal, ...localStore.goals.filter(goal => goal.id !== ref.id)];
@@ -464,7 +492,19 @@ export const DataService = {
       
       const q = query(collection(firestore, 'users', userId, 'tasks'), ...constraints);
       const snap = await getDocs(q);
-      return snap.docs.map(d => normalizeTask(d.id, d.data()));
+      const fetchedTasks = snap.docs.map(d => normalizeTask(d.id, d.data()));
+
+      await localStore.init();
+      const unrelatedLocalTasks = localStore.tasks.filter(task => {
+        if (goalId && task.goalId !== goalId) return true;
+        if (!goalId && date && task.date !== date) return true;
+        if (goalId && date && (task.goalId !== goalId || task.date !== date)) return true;
+        return false;
+      });
+      localStore.tasks = [...fetchedTasks, ...unrelatedLocalTasks];
+      await localStore.save();
+
+      return fetchedTasks;
     } catch (e) {
       console.warn("Fetch tasks failed, using local store", e);
       await localStore.init();
@@ -491,10 +531,10 @@ export const DataService = {
     }
 
     try {
-      const ref = await addDoc(collection(firestore, 'users', userId, 'tasks'), {
+      const ref = await withTimeout(addDoc(collection(firestore, 'users', userId, 'tasks'), {
         ...taskData,
         createdAt: serverTimestamp()
-      });
+      }), 'createTask');
       const added = { ...taskData, id: ref.id };
       await this.scheduleReminder(added);
       return added;
@@ -508,8 +548,11 @@ export const DataService = {
 
   async updateTask(userId: string, taskId: string, updates: Partial<Task>) {
     let updatedTask: WithId<Task> | null = null;
+    await localStore.init();
+    updatedTask = await localStore.updateTask(taskId, updates);
+
     if (this.isDemoMode()) {
-      updatedTask = await localStore.updateTask(taskId, updates);
+      // Local cache is already updated above.
     } else {
       try {
         const taskRef = doc(firestore, 'users', userId, 'tasks', taskId);
@@ -519,7 +562,7 @@ export const DataService = {
           updatedTask = normalizeTask(existingSnap.id, { ...existingSnap.data(), ...updates });
         }
       } catch (e) {
-        updatedTask = await localStore.updateTask(taskId, updates);
+        console.warn("Task update failed on server, keeping local update", e);
       }
     }
 
@@ -563,7 +606,19 @@ export const DataService = {
         
         const q = query(collection(firestore, 'users', userId, 'systems'), ...constraints);
         const snap = await getDocs(q);
-        return snap.docs.map(d => normalizeSystem(d.id, d.data()));
+        const fetchedSystems = snap.docs.map(d => normalizeSystem(d.id, d.data()));
+
+        await localStore.init();
+        const unrelatedLocalSystems = localStore.systems.filter(system => {
+          if (goalId && system.goalId !== goalId) return true;
+          if (!goalId && date && system.date !== date) return true;
+          if (goalId && date && (system.goalId !== goalId || system.date !== date)) return true;
+          return false;
+        });
+        localStore.systems = [...fetchedSystems, ...unrelatedLocalSystems];
+        await localStore.save();
+
+        return fetchedSystems;
       } catch (e) {
         console.warn("Fetch systems failed, using local store", e);
         await localStore.init();
@@ -576,9 +631,11 @@ export const DataService = {
   
   async updateSystem(userId: string, systemId: string, updates: Partial<System>) {
     let updatedSystem: WithId<System> | null = null;
+    await localStore.init();
+    updatedSystem = await localStore.updateSystem(systemId, updates);
 
     if (this.isDemoMode()) {
-      updatedSystem = await localStore.updateSystem(systemId, updates);
+      // Local cache is already updated above.
     } else {
         try {
           const systemRef = doc(firestore, 'users', userId, 'systems', systemId);
@@ -588,7 +645,7 @@ export const DataService = {
             updatedSystem = normalizeSystem(existingSnap.id, { ...existingSnap.data(), ...updates });
           }
         } catch (e) {
-          updatedSystem = await localStore.updateSystem(systemId, updates);
+          console.warn("System update failed on server, keeping local update", e);
         }
     }
 
@@ -611,11 +668,18 @@ export const DataService = {
   },
 
   async calculateGoalProgress(userId: string, goalId: string): Promise<number> {
-    // 1. Get all tasks and systems for this goal
-    const [tasks, systems] = await Promise.all([
-        this.getTasks(userId, goalId),
-        this.getSystems(userId, goalId)
-    ]);
+    // 1. Prefer the local cache so progress reflects the latest action state immediately.
+    await localStore.init();
+    let tasks = localStore.tasks.filter(task => task.goalId === goalId);
+    let systems = localStore.systems.filter(system => system.goalId === goalId);
+
+    // If the local cache has not been hydrated yet, fall back to the backend fetch.
+    if (tasks.length === 0 && systems.length === 0 && !this.isDemoMode()) {
+      [tasks, systems] = await Promise.all([
+          this.getTasks(userId, goalId),
+          this.getSystems(userId, goalId)
+      ]);
+    }
 
     const allItems = [...tasks, ...systems];
     if (allItems.length === 0) return 0;
@@ -626,14 +690,24 @@ export const DataService = {
     const completedCount = allItems.filter(i => i.isCompleted && (i.successPercentage || 0) >= 50).length;
     const progress = Math.round((completedCount / allItems.length) * 100);
 
-    // 2. Update the goal
-    if (this.isDemoMode()) {
-        const goalIndex = localStore.goals.findIndex(g => g.id === goalId);
-        if (goalIndex !== -1) {
-            localStore.goals[goalIndex].progress = progress;
-            await localStore.save();
+    // 2. Update the local goal cache first so plan cards reflect the latest progress immediately.
+    await localStore.init();
+    const goalIndex = localStore.goals.findIndex(g => g.id === goalId);
+    if (goalIndex !== -1) {
+        localStore.goals[goalIndex].progress = progress;
+        await localStore.save();
+    }
+
+    goalProgressListeners.forEach(listener => {
+        try {
+            listener({ goalId, progress });
+        } catch (error) {
+            console.warn("Goal progress listener failed", error);
         }
-    } else {
+    });
+
+    // 3. Mirror the update to Firestore when we are online.
+    if (!this.isDemoMode()) {
         try {
             await updateDoc(doc(firestore, 'users', userId, 'goals', goalId), { progress });
         } catch (e) {
@@ -657,10 +731,10 @@ export const DataService = {
     }
 
     try {
-        const ref = await addDoc(collection(firestore, 'users', userId, 'systems'), {
+        const ref = await withTimeout(addDoc(collection(firestore, 'users', userId, 'systems'), {
             ...systemData,
             createdAt: serverTimestamp()
-        });
+        }), 'createGoalSystem');
         const added = { ...systemData, id: ref.id };
         await this.scheduleReminder(added);
         return added;
@@ -697,10 +771,10 @@ export const DataService = {
     }
 
     try {
-        const noteRef = await addDoc(collection(firestore, 'users', userId, 'journals'), {
+        const noteRef = await withTimeout(addDoc(collection(firestore, 'users', userId, 'journals'), {
             ...noteData,
             createdAt: serverTimestamp()
-        });
+        }), 'addNote');
         const savedNote = {
           ...noteData,
           id: noteRef.id

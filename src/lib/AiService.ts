@@ -416,13 +416,15 @@ export const AiService = {
       durationMinutes: number;
       priority: 'High' | 'Medium' | 'Low';
     }>,
-    startTime: string
+    startTime: string,
+    date: string
   ): Promise<OrganizedDay | null> {
     return callOnlineAi(
       {
         type: 'organize-day',
-        goalDescription: "Organize today's activities into a practical execution schedule.",
+        goalDescription: `Organize the activities for ${date} into a practical execution schedule.`,
         context: {
+          date,
           startTime,
           activities
         }
