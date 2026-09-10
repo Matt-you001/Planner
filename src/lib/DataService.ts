@@ -24,7 +24,7 @@ const STORAGE_KEYS = {
 };
 
 import { HABIT_THRESHOLDS, HabitStage } from './types';
-import * as Notifications from 'expo-notifications';
+import { NotificationService } from './NotificationService';
 
 const FIRESTORE_TIMEOUT_MS = 8000;
 
@@ -322,24 +322,20 @@ export const DataService = {
     // If date is in past, don't schedule
     if (triggerDate.getTime() < Date.now()) return;
 
-    const categoryId = item.linkedApp ? 'linked-app-reminder' : 'default-reminder';
-
     try {
-        await Notifications.scheduleNotificationAsync({
-            content: {
-                title: item.title,
-                body: `It's time to ${item.title}`,
-                data: { linkedApp: item.linkedApp },
-                categoryIdentifier: categoryId, // 'linked-app-reminder' has 'Accept' action
-            },
-            trigger: {
-                type: Notifications.SchedulableTriggerInputTypes.DATE, // Explicitly set trigger type
-                date: triggerDate, // Use 'date' property for specific timestamp
-            },
-        });
-        console.log(`Scheduled reminder for ${item.title} at ${triggerDate}`);
+        const notificationId = await NotificationService.scheduleNotification(
+          'goalTitle' in item ? item.goalTitle : item.title,
+          `It's time to ${item.title}`,
+          triggerDate,
+          item.linkedApp ? { linkedApp: item.linkedApp } : undefined
+        );
+        if (notificationId) {
+          console.log(`Scheduled reminder for ${item.title} at ${triggerDate}`);
+        }
+        return notificationId;
     } catch (e) {
         console.warn("Failed to schedule notification", e);
+        return undefined;
     }
   },
 

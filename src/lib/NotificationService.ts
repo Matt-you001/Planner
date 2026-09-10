@@ -5,6 +5,8 @@ import { Platform } from 'react-native';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
+    shouldShowBanner: true,
+    shouldShowList: true,
     shouldPlaySound: true,
     shouldSetBadge: false,
   }),
@@ -53,13 +55,12 @@ export const NotificationService = {
           lightColor: '#FF231F7C',
           sound: 'default', 
           lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
-          bypassDnd: true,
         });
 
         // Action buttons keep linked-app reminders useful without opening a full-screen activity.
-        await Notifications.setNotificationCategoryAsync('REMINDER_ACTION', [
+        await Notifications.setNotificationCategoryAsync('linked-app-reminder', [
           {
-            identifier: 'OPEN_APP',
+            identifier: 'ACCEPT',
             buttonTitle: 'Open App',
             options: {
               opensAppToForeground: true,
@@ -80,9 +81,9 @@ export const NotificationService = {
           title,
           body,
           data: data, // Attach custom data (e.g. linkedApp)
-          sound: true, // For iOS
+          sound: 'default',
           priority: Notifications.AndroidNotificationPriority.MAX, // For Android
-          categoryIdentifier: data?.linkedApp ? 'REMINDER_ACTION' : undefined, // Only show buttons if app linked
+          categoryIdentifier: data?.linkedApp ? 'linked-app-reminder' : 'default-reminder',
           autoDismiss: false, // Keep it visible until interaction
           sticky: true,
           vibrate: [0, 250, 250, 250], // Force vibration pattern here too

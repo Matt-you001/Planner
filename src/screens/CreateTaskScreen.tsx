@@ -8,7 +8,6 @@ import { DataService } from '../lib/DataService';
 import type { RepeatFrequency, CustomRepeatConfig } from '../lib/types';
 import { format } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { NotificationService } from '../lib/NotificationService';
 import CustomRepeatModal from '../components/CustomRepeatModal';
 import AppSelectionModal from '../components/AppSelectionModal';
 import { generateRecurringDates } from '../lib/recurrence';
@@ -29,13 +28,6 @@ export default function CreateTaskScreen() {
     return d;
   });
   const [showStartTimePicker, setShowStartTimePicker] = useState(false);
-  
-  const [endTime, setEndTime] = useState(() => {
-    const d = new Date();
-    d.setHours(9, 30, 0, 0);
-    return d;
-  });
-  const [showEndTimePicker, setShowEndTimePicker] = useState(false);
   
   const [linkedApp, setLinkedApp] = useState('');
   
@@ -68,14 +60,6 @@ export default function CreateTaskScreen() {
     }
   };
 
-  const onEndTimeChange = (event: any, selectedDate?: Date) => {
-    setShowEndTimePicker(Platform.OS === 'ios');
-    
-    if (event.type === 'set' && selectedDate) {
-        setEndTime(selectedDate);
-    }
-  };
-
   const renderPicker = (
     show: boolean,
     value: Date,
@@ -99,12 +83,8 @@ export default function CreateTaskScreen() {
     if (!title.trim() || !user) return;
 
     // Conflict Check
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = format(date, 'yyyy-MM-dd');
     const startStr = format(startTime, 'HH:mm');
-    // const endStr = format(endTime, 'HH:mm'); // End Time ignored for tasks
-    
-    // We only check conflict if we had a duration, but since we removed end time, we can assume a default duration (e.g. 30m) or skip end-check
-    // For now, let's just pass startStr as endStr to check point-in-time or small window
     const hasConflict = await DataService.checkConflict(user.uid, dateStr, startStr, startStr);
 
     if (hasConflict) {
@@ -140,37 +120,15 @@ export default function CreateTaskScreen() {
       const promises: Promise<any>[] = [];
 
       for (const d of datesToSave) {
-          // Schedule Alarm
-          let notificationId: string | undefined;
-          if (alarmEnabled) {
-              const triggerDate = new Date(d);
-              triggerDate.setHours(startTime.getHours());
-              triggerDate.setMinutes(startTime.getMinutes());
-              triggerDate.setSeconds(0);
-              
-              if (triggerDate > new Date()) {
-                  // Schedule notification exactly at start time
-                  // Attach linkedApp to data payload so Dashboard listener can open it on tap
-                  const id = await NotificationService.scheduleNotification(
-                      title, // Title: Task Title
-                      `It's time to ${title}`, // Body: It's time to {Task Title}
-                      triggerDate,
-                      linkedApp ? { linkedApp } : undefined
-                  );
-                  if (id) notificationId = id;
-              }
-          }
-
           promises.push(DataService.createTask(user.uid, {
             title: title.trim(),
             // goalId is now optional
-            date: d.toISOString().split('T')[0],
+            date: format(d, 'yyyy-MM-dd'),
             startTime: format(startTime, 'HH:mm'),
-            endTime: format(startTime, 'HH:mm'), // Set End Time same as Start Time (or undefined if backend supports it) to effectively "hide" duration
+            endTime: format(startTime, 'HH:mm'),
             linkedApp: linkedApp || undefined,
             repeat: repeatEnabled ? repeatFrequency : 'Never',
-            alarm: alarmEnabled,
-            notificationId
+            alarm: alarmEnabled
           }));
       }
 
@@ -211,7 +169,7 @@ export default function CreateTaskScreen() {
             className="flex-row items-center rounded-lg border border-gray-300 p-3"
           >
             <Calendar size={20} color="gray" className="mr-2" />
-            <Text className="text-base text-gray-900">{date.toISOString().split('T')[0]}</Text>
+            <Text className="text-base text-gray-900">{format(date, 'yyyy-MM-dd')}</Text>
           </TouchableOpacity>
           {renderPicker(showDatePicker, date, 'date', onDateChange)}
         </View>
@@ -230,18 +188,6 @@ export default function CreateTaskScreen() {
                 </TouchableOpacity>
                 {renderPicker(showStartTimePicker, startTime, 'time', onStartTimeChange)}
             </View>
-            {/* End Time Removed from UI per request */}
-            {/* <View className="flex-1">
-                <Text className="mb-2 text-sm font-medium text-gray-700">End Time</Text>
-                <TouchableOpacity 
-                    onPress={() => setShowEndTimePicker(true)}
-                    className="flex-row items-center rounded-lg border border-gray-300 p-3"
-                >
-                    <Clock size={20} color="gray" className="mr-2" />
-                    <Text className="text-base text-gray-900">{endTime ? format(endTime, 'HH:mm') : 'None'}</Text>
-                </TouchableOpacity>
-                {endTime && renderPicker(showEndTimePicker, endTime, 'time', onEndTimeChange)}
-            </View> */}
         </View>
 
           <View className="mb-6">

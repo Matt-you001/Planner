@@ -1,14 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, TextInput, Platform, Modal, Alert, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { ArrowLeft, Zap, Wand2, Calendar, Plus, Trash2, Clock, Smartphone, X, Bell, BellOff, Repeat } from 'lucide-react-native';
-import { AiService } from '../lib/AiService';
 import { DataService } from '../lib/DataService';
 import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { NotificationService } from '../lib/NotificationService';
 import type { RepeatFrequency, CustomRepeatConfig } from '../lib/types';
 import CustomRepeatModal from '../components/CustomRepeatModal';
 import { generateRecurringDates } from '../lib/recurrence';
@@ -31,7 +29,6 @@ const COMMON_APPS = [
 interface StackPart {
   title: string;
   startTime: Date;
-  endTime: Date;
   linkedApp: string;
   alarm: boolean;
 }
@@ -48,24 +45,33 @@ export default function PlanStackScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user, subscriptionTier, upgradeToPremium } = useAuth();
-  const { goalId, goalTitle, startDate, targetDate, initialSelectedDate } = route.params;
+  const {
+    goalId,
+    goalTitle,
+    startDate,
+    initialSelectedDate,
+    draftGoalTitle,
+    draftCategory,
+    draftStartDate,
+    draftLinkedPlanId
+  } = route.params;
+  const resolvedGoalTitle = goalTitle || draftGoalTitle || 'Habit';
+  const resolvedStartDate = draftStartDate || startDate;
 
-  const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   
   // Date State
   // Default to initialSelectedDate if provided, else startDate, else today.
   const [date, setDate] = useState(
       initialSelectedDate ? new Date(initialSelectedDate) : 
-      (startDate ? new Date(startDate) : new Date())
+      (resolvedStartDate ? new Date(resolvedStartDate) : new Date())
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Time Picker State
   const [showTimePicker, setShowTimePicker] = useState<{ 
       stackId: string, 
-      part: keyof Omit<StackItem, 'id'>, 
-      type: 'start' | 'end' 
+      part: keyof Omit<StackItem, 'id'>
   } | null>(null);
 
   // App Picker State
@@ -82,10 +88,36 @@ export default function PlanStackScreen() {
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig | undefined>();
   const [showCustomRepeatModal, setShowCustomRepeatModal] = useState(false);
 
-  // Stacks List
-  const [stacks, setStacks] = useState<StackItem[]>([]);
+  React.useEffect(() => {
+    if (subscriptionTier !== 'free') return;
 
-  const getRoundedStartTime = (hourOffset: number = 0, minuteOffset: number = 0) => {
+    Alert.alert(
+      "Premium Feature",
+      "Building habits is available only for Premium subscribers.",
+      [
+        { text: "Back", onPress: () => navigation.goBack() },
+        { text: "Upgrade", onPress: () => {
+            upgradeToPremium();
+            navigation.goBack();
+          }
+        }
+      ]
+    );
+  }, [navigation, subscriptionTier, upgradeToPremium]);
+
+  // Stacks List
+  const [stacks, setStacks] = useState<StackItem[]>([
+    {
+      id: '1',
+      trigger: { title: '', startTime: getRoundedDate(0, 0), linkedApp: '', alarm: true },
+      response: { title: '', startTime: getRoundedDate(0, 5), linkedApp: '', alarm: true },
+      stacked: { title: '', startTime: getRoundedDate(0, 10), linkedApp: '', alarm: true },
+      reward: { title: '', startTime: getRoundedDate(0, 15), linkedApp: '', alarm: true },
+    }
+  ]);
+  const partOrder: (keyof Omit<StackItem, 'id'>)[] = ['trigger', 'response', 'stacked', 'reward'];
+
+  function getRoundedDate(hourOffset: number = 0, minuteOffset: number = 0) {
       const start = new Date();
       start.setSeconds(0, 0);
       const remainder = start.getMinutes() % 5;
@@ -95,49 +127,13 @@ export default function PlanStackScreen() {
       start.setHours(start.getHours() + hourOffset);
       start.setMinutes(start.getMinutes() + minuteOffset);
       return start;
-  };
+  }
 
   // Helper to create default part
   const createPart = (title: string = '', hourOffset: number = 0, minuteOffset: number = 0): StackPart => {
-      const start = getRoundedStartTime(hourOffset, minuteOffset);
-      const end = new Date(start.getTime() + 5 * 60000); // 5 mins default
-      return { title, startTime: start, endTime: end, linkedApp: '', alarm: true }; // Default Alarm True
+      const start = getRoundedDate(hourOffset, minuteOffset);
+      return { title, startTime: start, linkedApp: '', alarm: true };
   };
-
-  useEffect(() => {
-    async function fetchSuggestion() {
-      try {
-        const result = await AiService.suggestHabitStack(goalTitle) || {
-            trigger: { title: '', description: '' },
-            response: { title: '', description: '' },
-            stacked: { title: '', description: '' },
-            reward: { title: '', description: '' }
-        };
-        
-        // Pre-fill the first stack with AI suggestion
-        setStacks([{
-            id: '1',
-            trigger: createPart(result.trigger.title, 0, 0),
-            response: createPart(result.response.title, 0, 5),
-            stacked: createPart(result.stacked.title, 0, 35),
-            reward: createPart(result.reward.title, 0, 45)
-        }]);
-      } catch (e) {
-        console.error("AI Error", e);
-        // Fallback
-        setStacks([{
-            id: '1',
-            trigger: createPart(),
-            response: createPart(),
-            stacked: createPart(),
-            reward: createPart()
-        }]);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-    fetchSuggestion();
-  }, [goalTitle]);
 
   const onDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
@@ -151,54 +147,27 @@ export default function PlanStackScreen() {
         setStacks(prev => prev.map(s => {
             if (s.id === showTimePicker.stackId) {
                 const partKey = showTimePicker.part;
-                const part = s[partKey];
                 
-                // New Stack Item with updated time
                 let newStack = {
                     ...s,
                     [partKey]: {
-                        ...part,
-                        [showTimePicker.type === 'start' ? 'startTime' : 'endTime']: selectedDate
+                        ...s[partKey],
+                        startTime: selectedDate
                     }
                 };
 
-                // Auto-Alignment Logic for Stack Parts
-                const keys: (keyof Omit<StackItem, 'id'>)[] = ['trigger', 'response', 'stacked', 'reward'];
-                const currentIdx = keys.indexOf(partKey);
+                const currentIdx = partOrder.indexOf(partKey);
+                if (currentIdx !== -1 && currentIdx < partOrder.length - 1) {
+                    let previousStart = new Date(selectedDate);
 
-                // 1. If Start Time changed, update End Time to keep duration (optional) OR just shift everything?
-                // For simplicity: If start time changes, shift end time.
-                if (showTimePicker.type === 'start') {
-                    const duration = part.endTime.getTime() - part.startTime.getTime();
-                    // If the new start time makes duration negative or huge, reset to default 5 mins?
-                    // Better: Preserve duration.
-                    const newEnd = new Date(selectedDate.getTime() + (duration > 0 ? duration : 5 * 60000));
-                    newStack[partKey].endTime = newEnd;
-                }
-
-                // 2. Ripple Effect: Ensure the NEXT part starts when THIS part ends
-                if (currentIdx !== -1 && currentIdx < keys.length - 1) {
-                    // Propagate changes down the chain
-                    let previousPart = newStack[keys[currentIdx]];
-                    
-                    for (let i = currentIdx + 1; i < keys.length; i++) {
-                         const thisKey = keys[i];
-                         const thisPart = newStack[thisKey];
-                         
-                         // Next part starts exactly when previous part ends
-                         const newStart = new Date(previousPart.endTime);
-                         
-                         // Maintain duration of this part
-                         const thisDuration = thisPart.endTime.getTime() - thisPart.startTime.getTime();
-                         const newEnd = new Date(newStart.getTime() + (thisDuration > 0 ? thisDuration : 5 * 60000));
-                         
+                    for (let i = currentIdx + 1; i < partOrder.length; i++) {
+                         const thisKey = partOrder[i];
+                         const newStart = new Date(previousStart.getTime() + 5 * 60000);
                          newStack[thisKey] = {
-                             ...thisPart,
-                             startTime: newStart,
-                             endTime: newEnd
+                             ...newStack[thisKey],
+                             startTime: newStart
                          };
-                         
-                         previousPart = newStack[thisKey];
+                         previousStart = newStart;
                     }
                 }
                 
@@ -217,8 +186,7 @@ export default function PlanStackScreen() {
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             onChange={onChange}
-            minimumDate={startDate ? new Date(startDate) : undefined}
-            maximumDate={targetDate ? new Date(targetDate) : undefined}
+            minimumDate={resolvedStartDate ? new Date(resolvedStartDate) : undefined}
         />
     );
   };
@@ -228,11 +196,10 @@ export default function PlanStackScreen() {
     const stack = stacks.find(s => s.id === showTimePicker.stackId);
     if (!stack) return null;
     const part = stack[showTimePicker.part];
-    const value = showTimePicker.type === 'start' ? part.startTime : part.endTime;
 
     return (
         <DateTimePicker
-            value={value}
+            value={part.startTime}
             mode="time"
             is24Hour={true}
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
@@ -284,7 +251,7 @@ export default function PlanStackScreen() {
     if (!user) return;
     
     // Conflict Check
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = format(date, 'yyyy-MM-dd');
     let hasConflict = false;
     
     const partsToCheck: StackPart[] = [];
@@ -296,13 +263,10 @@ export default function PlanStackScreen() {
     });
 
     for (const part of partsToCheck) {
-        // Only check if title is not empty (assuming empty parts might be ignored or valid?)
-        // Actually empty parts are saved as systems too currently.
-        if (!part.startTime || !part.endTime) continue;
+        if (!part.startTime) continue;
         
         const startStr = format(part.startTime, 'HH:mm');
-        const endStr = format(part.endTime, 'HH:mm');
-        const conflict = await DataService.checkConflict(user.uid, dateStr, startStr, endStr);
+        const conflict = await DataService.checkConflict(user.uid, dateStr, startStr, startStr);
         if (conflict) {
             hasConflict = true;
             break;
@@ -328,24 +292,37 @@ export default function PlanStackScreen() {
     setIsSaving(true);
     const baseDate = new Date(date);
     
-    // Determine Limit Date
-    let limitDate: Date | undefined;
-    if (targetDate) {
-        limitDate = new Date(targetDate);
-    }
-    
     const datesToSave = generateRecurringDates(
         baseDate, 
         repeatEnabled ? repeatFrequency : 'Never', 
         customRepeatConfig, 
-        limitDate
+        undefined
     );
 
     try {
+        let resolvedGoalId = goalId;
+
+        if (!resolvedGoalId) {
+            if (!draftGoalTitle) {
+                throw new Error('Missing draft goal details for habit creation.');
+            }
+
+            const createdGoal = await DataService.createGoal(user.uid, {
+                title: draftGoalTitle,
+                category: draftCategory || 'General',
+                progress: 0,
+                startDate: resolvedStartDate
+                    ? new Date(resolvedStartDate).toISOString().split('T')[0]
+                    : new Date().toISOString().split('T')[0],
+                linkedPlanId: draftLinkedPlanId
+            });
+            resolvedGoalId = createdGoal.id;
+        }
+
         const promises: Promise<any>[] = [];
 
         for (const d of datesToSave) {
-            const dateStr = d.toISOString().split('T')[0];
+            const dateStr = format(d, 'yyyy-MM-dd');
 
             for (const stack of stacks) {
                 const parts: { key: keyof Omit<StackItem, 'id'>, titlePrefix: string }[] = [
@@ -359,35 +336,18 @@ export default function PlanStackScreen() {
                     const part = stack[key];
                     if (!part.title.trim()) continue; // Skip empty parts?
 
-                    // Schedule Alarm
-                    let notificationId: string | undefined;
-                    if (part.alarm) {
-                        const triggerDate = new Date(d);
-                        triggerDate.setHours(part.startTime.getHours());
-                        triggerDate.setMinutes(part.startTime.getMinutes());
-                        triggerDate.setSeconds(0);
-                        
-                        if (triggerDate > new Date()) {
-                            const id = await NotificationService.scheduleNotification(
-                                goalTitle, // Title: Plan Title
-                                `It's time to ${part.title}`, // Body: It's time to {Activity}
-                                triggerDate,
-                                part.linkedApp ? { linkedApp: part.linkedApp } : undefined
-                            );
-                            if (id) notificationId = id;
-                        }
-                    }
-
                     promises.push(DataService.createGoalSystem(user.uid, {
-                        goalId, goalTitle, 
+                        goalId: resolvedGoalId,
+                        goalTitle: resolvedGoalTitle,
                         title: `${titlePrefix}${part.title}`, 
                         date: dateStr, 
                         startTime: format(part.startTime, 'HH:mm'), 
-                        endTime: format(part.endTime, 'HH:mm'),
+                        endTime: format(part.startTime, 'HH:mm'),
+                        isCompleted: false,
+                        successPercentage: 0,
                         linkedApp: part.linkedApp,
                         repeat: repeatEnabled ? repeatFrequency : 'Never',
-                        alarm: part.alarm,
-                        notificationId
+                        alarm: part.alarm
                     }));
                 }
             }
@@ -442,18 +402,11 @@ export default function PlanStackScreen() {
 
             <View className="flex-row gap-2">
                 <TouchableOpacity 
-                    onPress={() => setShowTimePicker({ stackId: stack.id, part: partKey, type: 'start' })}
+                    onPress={() => setShowTimePicker({ stackId: stack.id, part: partKey })}
                     className="flex-1 flex-row items-center rounded-md border border-gray-200 bg-gray-50 p-2"
                 >
                     <Clock size={14} color="gray" className="mr-1" />
                     <Text className="text-xs">{format(part.startTime, 'HH:mm')}</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                    onPress={() => setShowTimePicker({ stackId: stack.id, part: partKey, type: 'end' })}
-                    className="flex-1 flex-row items-center rounded-md border border-gray-200 bg-gray-50 p-2"
-                >
-                    <Clock size={14} color="gray" className="mr-1" />
-                    <Text className="text-xs">{format(part.endTime, 'HH:mm')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity 
                     onPress={() => {
@@ -478,18 +431,23 @@ export default function PlanStackScreen() {
                     </Text>
                 </TouchableOpacity>
             </View>
+            <View className="mt-2 flex-row items-center justify-between rounded-md border border-sky-100 bg-sky-50 px-3 py-2">
+                <View className="flex-row items-center">
+                    {part.alarm ? <Bell size={16} color="#0284c7" /> : <BellOff size={16} color="#64748b" />}
+                    <Text className="ml-2 text-xs font-semibold text-gray-700">
+                        Reminder at {format(part.startTime, 'HH:mm')}
+                    </Text>
+                </View>
+                <Switch
+                    value={part.alarm}
+                    onValueChange={() => togglePartAlarm(stack.id, partKey)}
+                    trackColor={{ false: '#cbd5e1', true: '#7dd3fc' }}
+                    thumbColor={part.alarm ? '#0284c7' : '#f8fafc'}
+                />
+            </View>
         </View>
       );
   };
-
-  if (isLoading) {
-    return (
-        <SafeAreaView className="flex-1 bg-white items-center justify-center">
-            <ActivityIndicator size="large" color="#eab308" />
-            <Text className="mt-4 text-gray-500">Consulting AI Coach...</Text>
-        </SafeAreaView>
-    );
-  }
 
   return (
     <SafeAreaView className="flex-1 bg-white" edges={['top']}>
@@ -504,26 +462,20 @@ export default function PlanStackScreen() {
         <View className="mb-6 flex-row items-center gap-3 bg-yellow-50 p-4 rounded-lg border border-yellow-100">
             <Wand2 size={24} color="#ca8a04" />
             <View className="flex-1">
-                <Text className="text-lg font-bold text-black-900">{goalTitle}</Text>
-                <Text className="text-base text-black-800">Adjust the times and activities as needed.</Text>
+                <Text className="text-lg font-bold text-black-900">{resolvedGoalTitle}</Text>
+                <Text className="text-base text-black-800">Build your stack manually and adjust the times and activities as needed.</Text>
             </View>
         </View>
 
         <View className="mb-6">
           <Text className="mb-2 text-center text-sm font-medium text-gray-500">
-             Pick any day between {(() => {
+             Pick any day on or after {(() => {
                  try {
-                     return format(new Date(startDate), 'MMM d, yyyy');
+                     return format(new Date(resolvedStartDate), 'MMM d, yyyy');
                  } catch (e) {
-                     return startDate;
+                     return resolvedStartDate;
                  }
-             })()} to {targetDate ? (() => {
-                 try {
-                     return format(new Date(targetDate), 'MMM d, yyyy');
-                 } catch (e) {
-                     return targetDate;
-                 }
-             })() : 'forever'} to create your plan.
+             })()} to create your plan.
           </Text>
           <Text className="mb-2 text-sm font-medium text-gray-700">Select Date</Text>
           <TouchableOpacity 
@@ -531,7 +483,7 @@ export default function PlanStackScreen() {
             className="flex-row items-center rounded-lg border border-gray-300 p-3"
           >
             <Calendar size={20} color="gray" className="mr-2" />
-            <Text className="text-base text-gray-900">{date.toISOString().split('T')[0]}</Text>
+            <Text className="text-base text-gray-900">{format(date, 'yyyy-MM-dd')}</Text>
           </TouchableOpacity>
           {renderDatePicker(showDatePicker, date, onDateChange)}
         </View>

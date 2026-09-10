@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Platform, Modal, Alert, Switch } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useNavigation, useRoute } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
-import { ArrowLeft, Plus, Trash2, Calendar, Clock, Sparkles, X, Smartphone, Bell, BellOff, Repeat } from 'lucide-react-native';
+import { ArrowLeft, Plus, Trash2, Calendar, Clock, X, Smartphone, Bell, BellOff, Repeat } from 'lucide-react-native';
 import { DataService } from '../lib/DataService';
+import { NotificationService } from '../lib/NotificationService';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { format } from 'date-fns';
-import { AiService } from '../lib/AiService';
-import { NotificationService } from '../lib/NotificationService';
 import type { RepeatFrequency, CustomRepeatConfig } from '../lib/types';
 import CustomRepeatModal from '../components/CustomRepeatModal';
 import { generateRecurringDates } from '../lib/recurrence';
@@ -35,7 +34,6 @@ interface ActivityItem {
   id: string;
   title: string;
   startTime: Date;
-  endTime: Date;
   linkedApp: string;
   alarm: boolean;
 }
@@ -44,24 +42,34 @@ export default function PlanIsolateScreen() {
   const navigation = useNavigation<any>();
   const route = useRoute<any>();
   const { user, subscriptionTier, upgradeToPremium } = useAuth();
-  const { goalId, goalTitle, startDate, targetDate, initialSelectedDate } = route.params;
+  const {
+    goalId,
+    goalTitle,
+    startDate,
+    initialSelectedDate,
+    draftGoalTitle,
+    draftCategory,
+    draftStartDate
+  } = route.params;
+  const resolvedGoalTitle = goalTitle || draftGoalTitle || 'Plan';
+  const resolvedStartDate = draftStartDate || startDate;
 
   // Date State
   // Default to initialSelectedDate if provided, else startDate, else today.
   const [date, setDate] = useState(
       initialSelectedDate ? new Date(initialSelectedDate) : 
-      (startDate ? new Date(startDate) : new Date())
+      (resolvedStartDate ? new Date(resolvedStartDate) : new Date())
   );
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   // Time Picker State
-  const [showTimePicker, setShowTimePicker] = useState<{ id: string, type: 'start' | 'end' } | null>(null);
+  const [showTimePicker, setShowTimePicker] = useState<{ id: string } | null>(null);
 
   // App Picker State
   const [showAppPicker, setShowAppPicker] = useState<{ id: string } | null>(null);
 
   const [activities, setActivities] = useState<ActivityItem[]>([
-    { id: '1', title: '', startTime: new Date(), endTime: new Date(new Date().getTime() + 30 * 60000), linkedApp: '', alarm: false }
+    { id: '1', title: '', startTime: new Date(), linkedApp: '', alarm: true }
   ]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -72,10 +80,22 @@ export default function PlanIsolateScreen() {
   const [customRepeatConfig, setCustomRepeatConfig] = useState<CustomRepeatConfig | undefined>();
   const [showCustomRepeatModal, setShowCustomRepeatModal] = useState(false);
 
-  // Activities ListAI State
-  const [isAiLoading, setIsAiLoading] = useState(false);
-  const [showAiModal, setShowAiModal] = useState(false);
-  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  React.useEffect(() => {
+    if (subscriptionTier !== 'free') return;
+
+    Alert.alert(
+      "Premium Feature",
+      "Creating plans is available only for Premium subscribers.",
+      [
+        { text: "Back", onPress: () => navigation.goBack() },
+        { text: "Upgrade", onPress: () => {
+            upgradeToPremium();
+            navigation.goBack();
+          }
+        }
+      ]
+    );
+  }, [navigation, subscriptionTier, upgradeToPremium]);
 
   const onDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(Platform.OS === 'ios');
@@ -90,7 +110,7 @@ export default function PlanIsolateScreen() {
             if (a.id === showTimePicker.id) {
                 return {
                     ...a,
-                    [showTimePicker.type === 'start' ? 'startTime' : 'endTime']: selectedDate
+                    startTime: selectedDate
                 };
             }
             return a;
@@ -119,8 +139,7 @@ export default function PlanIsolateScreen() {
             mode="date"
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
             onChange={onChange}
-            minimumDate={startDate ? new Date(startDate) : undefined}
-            maximumDate={targetDate ? new Date(targetDate) : undefined}
+            minimumDate={resolvedStartDate ? new Date(resolvedStartDate) : undefined}
         />
     );
   };
@@ -131,11 +150,9 @@ export default function PlanIsolateScreen() {
     const activity = activities.find(a => a.id === showTimePicker.id);
     if (!activity) return null;
 
-    const value = showTimePicker.type === 'start' ? activity.startTime : activity.endTime;
-
     return (
         <DateTimePicker
-            value={value}
+            value={activity.startTime}
             mode="time"
             is24Hour={true}
             display={Platform.OS === 'ios' ? 'spinner' : 'default'}
@@ -149,15 +166,14 @@ export default function PlanIsolateScreen() {
         id: Date.now().toString() + Math.random(), 
         title, 
         startTime: new Date(), 
-        endTime: new Date(new Date().getTime() + 30 * 60000),
         linkedApp: '',
-        alarm: false
+        alarm: true
     }]);
   };
 
   const removeActivity = (id: string) => {
     if (activities.length === 1) {
-        setActivities([{ id: '1', title: '', startTime: new Date(), endTime: new Date(new Date().getTime() + 30 * 60000), linkedApp: '', alarm: false }]);
+        setActivities([{ id: '1', title: '', startTime: new Date(), linkedApp: '', alarm: true }]);
         return;
     }
     setActivities(activities.filter(a => a.id !== id));
@@ -171,76 +187,24 @@ export default function PlanIsolateScreen() {
       setActivities(activities.map(a => a.id === id ? { ...a, alarm: !a.alarm } : a));
   };
 
-  const handleGetSuggestions = async () => {
-    setIsAiLoading(true);
-    try {
-        const suggestions = await AiService.suggestHabits(goalTitle);
-        setAiSuggestions(suggestions);
-        setShowAiModal(true);
-    } catch (e) {
-        console.error("AI Error", e);
-    } finally {
-        setIsAiLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (!goalTitle?.trim()) return;
-    if (!(activities.length === 1 && activities[0].title.trim() === '')) return;
-
-    let isCancelled = false;
-
-    const preloadSuggestions = async () => {
-      setIsAiLoading(true);
-      try {
-        const suggestions = await AiService.suggestHabits(goalTitle);
-        if (!isCancelled) {
-          setAiSuggestions(suggestions);
-          if (suggestions.length > 0) {
-            setActivities(suggestions.slice(0, 3).map((suggestion, index) => ({
-              id: `${Date.now()}-${index}`,
-              title: suggestion,
-              startTime: new Date(),
-              endTime: new Date(new Date().getTime() + 30 * 60000),
-              linkedApp: '',
-              alarm: false
-            })));
-          }
-        }
-      } catch (error) {
-        console.error('Failed to preload plan suggestions', error);
-      } finally {
-        if (!isCancelled) {
-          setIsAiLoading(false);
-        }
-      }
-    };
-
-    preloadSuggestions();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [goalTitle]);
-
-  const handleSelectSuggestion = (suggestion: string) => {
-    // If the first activity is empty, replace it
-    if (activities.length === 1 && activities[0].title === '') {
-        setActivities([{ ...activities[0], title: suggestion }]);
-    } else {
-        addActivity(suggestion);
-    }
-    setShowAiModal(false);
-  };
-
   const handleSave = async () => {
     if (!user) return;
     
     const validActivities = activities.filter(a => a.title.trim() !== '');
     if (validActivities.length === 0) return;
 
+    if (validActivities.some(activity => activity.alarm)) {
+      const notificationsAllowed = await NotificationService.requestPermissions();
+      if (!notificationsAllowed) {
+        Alert.alert(
+          'Notifications Disabled',
+          'The plan can be saved, but Android will not show activity reminders until notifications are enabled for PlanApp in device settings.'
+        );
+      }
+    }
+
     // Check for conflicts
-    const dateStr = date.toISOString().split('T')[0];
+    const dateStr = format(date, 'yyyy-MM-dd');
     let hasConflict = false;
 
     // We check each activity against the DB. 
@@ -248,8 +212,7 @@ export default function PlanIsolateScreen() {
     // but usually users add sequential items here.
     for (const activity of validActivities) {
         const startStr = format(activity.startTime, 'HH:mm');
-        const endStr = format(activity.endTime, 'HH:mm');
-        const conflict = await DataService.checkConflict(user.uid, dateStr, startStr, endStr);
+        const conflict = await DataService.checkConflict(user.uid, dateStr, startStr, startStr);
         if (conflict) {
             hasConflict = true;
             break; 
@@ -276,58 +239,50 @@ export default function PlanIsolateScreen() {
     
     const baseDate = new Date(date);
     
-    // Determine Limit Date
-    let limitDate: Date | undefined;
-    if (targetDate) {
-        limitDate = new Date(targetDate);
-    }
-    
     const datesToSave = generateRecurringDates(
         baseDate, 
         repeatEnabled ? repeatFrequency : 'Never', 
         customRepeatConfig, 
-        limitDate
+        undefined
     );
 
     try {
+        let resolvedGoalId = goalId;
+
+        if (!resolvedGoalId) {
+            if (!draftGoalTitle) {
+                throw new Error('Missing draft goal details for plan creation.');
+            }
+
+            const createdGoal = await DataService.createGoal(user.uid, {
+                title: draftGoalTitle,
+                category: draftCategory || 'General',
+                progress: 0,
+                startDate: resolvedStartDate
+                  ? new Date(resolvedStartDate).toISOString().split('T')[0]
+                  : new Date().toISOString().split('T')[0]
+            });
+            resolvedGoalId = createdGoal.id;
+        }
+
         const promises: Promise<any>[] = [];
 
         for (const d of datesToSave) {
-            const dateString = d.toISOString().split('T')[0];
+            const dateString = format(d, 'yyyy-MM-dd');
             
             for (const activity of validActivities) {
-                // Schedule Alarm
-                let notificationId: string | undefined;
-                if (activity.alarm) {
-                    const triggerDate = new Date(d);
-                    triggerDate.setHours(activity.startTime.getHours());
-                    triggerDate.setMinutes(activity.startTime.getMinutes());
-                    triggerDate.setSeconds(0);
-                    
-                    if (triggerDate > new Date()) {
-                        const id = await NotificationService.scheduleNotification(
-                            goalTitle, // Title: Plan Title
-                            `It's time to ${activity.title}`, // Body: It's time to {activity}
-                            triggerDate,
-                            activity.linkedApp ? { linkedApp: activity.linkedApp } : undefined
-                        );
-                        if (id) notificationId = id;
-                    }
-                }
-
                 promises.push(DataService.createGoalSystem(user.uid, {
-                    goalId,
-                    goalTitle,
+                    goalId: resolvedGoalId,
+                    goalTitle: resolvedGoalTitle,
                     title: activity.title,
                     date: dateString,
                     startTime: format(activity.startTime, 'HH:mm'),
-                    endTime: format(activity.startTime, 'HH:mm'), // Set End Time same as Start Time to hide duration
+                    endTime: format(activity.startTime, 'HH:mm'),
                     isCompleted: false,
                     successPercentage: 0,
                     linkedApp: activity.linkedApp,
                     repeat: repeatEnabled ? repeatFrequency : 'Never',
-                    alarm: activity.alarm,
-                    notificationId
+                    alarm: activity.alarm
                 }));
             }
         }
@@ -349,43 +304,20 @@ export default function PlanIsolateScreen() {
         </TouchableOpacity>
         <View className="flex-1">
             <Text className="text-lg font-bold text-gray-900">Isolate Activities</Text>
-            <Text className="text-xs text-gray-500">For: {goalTitle}</Text>
+            <Text className="text-xs text-gray-500">For: {resolvedGoalTitle}</Text>
         </View>
-        <TouchableOpacity 
-            onPress={handleGetSuggestions} 
-            disabled={isAiLoading}
-            className="flex-row items-center rounded-full bg-indigo-50 px-3 py-1"
-        >
-            {isAiLoading ? <ActivityIndicator size="small" color="#6366f1" /> : <Sparkles size={16} color="#6366f1" />}
-            <Text className="ml-1 text-xs font-bold text-indigo-600">AI Help</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView className="flex-1 p-4">
-        {aiSuggestions.length > 0 ? (
-          <View className="mb-4 rounded-xl border border-indigo-100 bg-indigo-50 p-4">
-            <Text className="mb-2 text-sm font-bold text-indigo-900">AI activity ideas for this plan</Text>
-            {aiSuggestions.slice(0, 5).map((suggestion) => (
-              <Text key={suggestion} className="mb-1 text-sm text-indigo-800">{`\u2022 ${suggestion}`}</Text>
-            ))}
-          </View>
-        ) : null}
-
         <View className="mb-6">
           <Text className="mb-2 text-center text-sm font-medium text-gray-500">
-             Pick any day between {(() => {
+             Pick any day on or after {(() => {
                  try {
-                     return format(new Date(startDate), 'MMM d, yyyy');
+                     return format(new Date(resolvedStartDate), 'MMM d, yyyy');
                  } catch (e) {
-                     return startDate;
+                     return resolvedStartDate;
                  }
-             })()} to {targetDate ? (() => {
-                 try {
-                     return format(new Date(targetDate), 'MMM d, yyyy');
-                 } catch (e) {
-                     return targetDate;
-                 }
-             })() : 'forever'} to create your plan.
+             })()} to create your plan.
           </Text>
           <Text className="mb-2 text-sm font-medium text-gray-700">Select Date</Text>
           <TouchableOpacity 
@@ -393,7 +325,7 @@ export default function PlanIsolateScreen() {
             className="flex-row items-center rounded-lg border border-gray-300 p-3"
           >
             <Calendar size={20} color="gray" className="mr-2" />
-            <Text className="text-base text-gray-900">{date.toISOString().split('T')[0]}</Text>
+            <Text className="text-base text-gray-900">{format(date, 'yyyy-MM-dd')}</Text>
           </TouchableOpacity>
           {renderDatePicker(showDatePicker, date, onDateChange)}
         </View>
@@ -420,21 +352,12 @@ export default function PlanIsolateScreen() {
                 
                 <View className="flex-row gap-2">
                     <TouchableOpacity 
-                        onPress={() => setShowTimePicker({ id: activity.id, type: 'start' })}
+                        onPress={() => setShowTimePicker({ id: activity.id })}
                         className="flex-1 flex-row items-center rounded-md border border-gray-200 bg-white p-2"
                     >
                         <Clock size={16} color="gray" className="mr-2" />
                         <Text>{format(activity.startTime, 'HH:mm')}</Text>
                     </TouchableOpacity>
-
-                    {/* End Time Removed from UI per request */}
-                    {/* <TouchableOpacity 
-                        onPress={() => setShowTimePicker({ id: activity.id, type: 'end' })}
-                        className="flex-1 flex-row items-center rounded-md border border-gray-200 bg-white p-2"
-                    >
-                        <Clock size={16} color="gray" className="mr-2" />
-                        <Text>{format(activity.endTime, 'HH:mm')}</Text>
-                    </TouchableOpacity> */}
 
                     <TouchableOpacity 
                         onPress={() => {
@@ -458,6 +381,22 @@ export default function PlanIsolateScreen() {
                             {activity.linkedApp ? appName : (subscriptionTier === 'free' ? 'Unlock App' : 'Link App')}
                         </Text>
                     </TouchableOpacity>
+                </View>
+
+                <View className="mt-3 flex-row items-center justify-between rounded-md border border-sky-100 bg-sky-50 px-3 py-2">
+                    <View className="flex-row items-center">
+                        {activity.alarm ? <Bell size={17} color="#0284c7" /> : <BellOff size={17} color="#64748b" />}
+                        <View className="ml-2">
+                            <Text className="text-sm font-semibold text-gray-800">Activity reminder</Text>
+                            <Text className="text-xs text-gray-500">Notify me at {format(activity.startTime, 'HH:mm')}</Text>
+                        </View>
+                    </View>
+                    <Switch
+                        value={activity.alarm}
+                        onValueChange={() => toggleActivityAlarm(activity.id)}
+                        trackColor={{ false: '#cbd5e1', true: '#7dd3fc' }}
+                        thumbColor={activity.alarm ? '#0284c7' : '#f8fafc'}
+                    />
                 </View>
             </View>
             );
@@ -514,44 +453,6 @@ export default function PlanIsolateScreen() {
           )}
         </TouchableOpacity>
       </ScrollView>
-
-      {/* AI Suggestions Modal */}
-      <Modal
-        visible={showAiModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowAiModal(false)}
-      >
-        <View className="flex-1 justify-end bg-black/50">
-            <View className="rounded-t-xl bg-white p-6 h-2/3">
-                <View className="mb-4 flex-row items-center justify-between">
-                    <View className="flex-row items-center">
-                        <Sparkles size={20} color="#6366f1" className="mr-2" />
-                        <Text className="text-lg font-bold text-gray-900">AI Suggestions</Text>
-                    </View>
-                    <TouchableOpacity onPress={() => setShowAiModal(false)}>
-                        <X size={24} color="gray" />
-                    </TouchableOpacity>
-                </View>
-                
-                <Text className="mb-4 text-sm text-gray-500">
-                    Select an activity to add to your plan:
-                </Text>
-
-                <ScrollView>
-                    {aiSuggestions.map((suggestion, idx) => (
-                        <TouchableOpacity 
-                            key={idx}
-                            className="mb-3 rounded-lg border border-indigo-100 bg-indigo-50 p-4"
-                            onPress={() => handleSelectSuggestion(suggestion)}
-                        >
-                            <Text className="font-medium text-indigo-900">{suggestion}</Text>
-                        </TouchableOpacity>
-                    ))}
-                </ScrollView>
-            </View>
-        </View>
-      </Modal>
 
       {/* App Picker Modal */}
       <AppSelectionModal 
