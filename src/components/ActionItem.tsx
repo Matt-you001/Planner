@@ -1,11 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { View, Text, Pressable, Linking, TouchableOpacity } from 'react-native';
-import Slider from '@react-native-community/slider';
 import { format, isToday, isPast } from 'date-fns';
-import { Link2, Target, Check, X, Trash2 } from 'lucide-react-native';
+import { Link2, Target, Trash2 } from 'lucide-react-native';
 import type { System, Task, WithId } from '../lib/types';
 import { useCelebration } from '../context/CelebrationContext';
-import { styled } from 'nativewind';
 
 type Action = WithId<System> | WithId<Task>;
 
@@ -15,11 +13,8 @@ type ActionItemProps = {
   onDelete?: () => void;
 };
 
-const HIDE_DELAY = 30 * 60 * 1000; // 30 minutes
-
 export default function ActionItem({ action, onActionChange, onDelete }: ActionItemProps) {
   const { celebrate } = useCelebration();
-  const [isVisible, setIsVisible] = useState(true);
 
   // We map 'isCompleted' and 'successPercentage' to our UI status
   // If isCompleted is true:
@@ -30,17 +25,6 @@ export default function ActionItem({ action, onActionChange, onDelete }: ActionI
   
   const isDone = action.isCompleted && (action.successPercentage || 0) >= 50;
   const isMissed = action.isCompleted && (action.successPercentage || 0) < 50;
-  const isPending = !action.isCompleted;
-
-  useEffect(() => {
-    if (action.isCompleted) {
-      const timer = setTimeout(() => {
-        setIsVisible(false);
-      }, HIDE_DELAY);
-      return () => clearTimeout(timer);
-    }
-  }, [action.isCompleted]);
-
   const handleDone = () => {
     // If already done, toggle off? Or do nothing? Usually toggle off to pending.
     if (isDone) {
@@ -69,10 +53,6 @@ export default function ActionItem({ action, onActionChange, onDelete }: ActionI
     : isPast(actionDate)
     ? format(actionDate, 'MMM d (Past)')
     : format(actionDate, 'EEE, MMM d');
-
-  if (!isVisible) {
-    return null;
-  }
 
   const cleanTitle = (title: string) => {
     return title.replace(/^(Cue|Habit|Stack|Reward):\s*/i, '');
