@@ -74,6 +74,28 @@ const normalizeSystem = (id: string, data: any): WithId<System> => ({
   createdAt: toIsoString(data.createdAt) || new Date().toISOString(),
 });
 
+type StoredAction = WithId<Task> | WithId<System>;
+
+const actionFingerprint = (item: StoredAction) => [
+  item.goalId || '',
+  item.title.trim().toLowerCase(),
+  item.date,
+  item.startTime || '',
+  item.endTime || '',
+].join('|');
+
+const mergeRemoteActions = <T extends StoredAction>(remote: T[], local: T[]): T[] => {
+  const remoteIds = new Set(remote.map(item => item.id));
+  const remoteFingerprints = new Set(remote.map(actionFingerprint));
+  const pendingLocal = local.filter(item =>
+    item.id.startsWith('local-') &&
+    !remoteIds.has(item.id) &&
+    !remoteFingerprints.has(actionFingerprint(item))
+  );
+
+  return [...remote, ...pendingLocal];
+};
+
 const normalizeJournalEntry = (id: string, data: any): JournalEntry => ({
   id,
   content: data.content || '',
@@ -481,26 +503,22 @@ export const DataService = {
     try {
       let constraints: any[] = [];
       if (goalId) constraints.push(where('goalId', '==', goalId));
-      if (date) {
-        constraints.push(where('date', '==', date));
-        constraints.push(orderBy('createdAt')); // Only order if we filter by date to avoid index issues
-      }
+      if (date) constraints.push(where('date', '==', date));
       
       const q = query(collection(firestore, 'users', userId, 'tasks'), ...constraints);
       const snap = await getDocs(q);
       const fetchedTasks = snap.docs.map(d => normalizeTask(d.id, d.data()));
 
       await localStore.init();
-      const unrelatedLocalTasks = localStore.tasks.filter(task => {
-        if (goalId && task.goalId !== goalId) return true;
-        if (!goalId && date && task.date !== date) return true;
-        if (goalId && date && (task.goalId !== goalId || task.date !== date)) return true;
-        return false;
-      });
-      localStore.tasks = [...fetchedTasks, ...unrelatedLocalTasks];
+      const matchesScope = (task: WithId<Task>) =>
+        (!goalId || task.goalId === goalId) && (!date || task.date === date);
+      const localMatches = localStore.tasks.filter(matchesScope);
+      const unrelatedLocalTasks = localStore.tasks.filter(task => !matchesScope(task));
+      const mergedTasks = mergeRemoteActions(fetchedTasks, localMatches);
+      localStore.tasks = [...mergedTasks, ...unrelatedLocalTasks];
       await localStore.save();
 
-      return fetchedTasks;
+      return mergedTasks;
     } catch (e) {
       console.warn("Fetch tasks failed, using local store", e);
       await localStore.init();
@@ -532,6 +550,9 @@ export const DataService = {
         createdAt: serverTimestamp()
       }), 'createTask');
       const added = { ...taskData, id: ref.id };
+      await localStore.init();
+      localStore.tasks = [added, ...localStore.tasks.filter(task => task.id !== added.id)];
+      await localStore.save();
       await this.scheduleReminder(added);
       return added;
     } catch (e) {
@@ -595,26 +616,22 @@ export const DataService = {
     try {
         let constraints: any[] = [];
         if (goalId) constraints.push(where('goalId', '==', goalId));
-        if (date) {
-          constraints.push(where('date', '==', date));
-          constraints.push(orderBy('createdAt')); 
-        }
+        if (date) constraints.push(where('date', '==', date));
         
         const q = query(collection(firestore, 'users', userId, 'systems'), ...constraints);
         const snap = await getDocs(q);
         const fetchedSystems = snap.docs.map(d => normalizeSystem(d.id, d.data()));
 
         await localStore.init();
-        const unrelatedLocalSystems = localStore.systems.filter(system => {
-          if (goalId && system.goalId !== goalId) return true;
-          if (!goalId && date && system.date !== date) return true;
-          if (goalId && date && (system.goalId !== goalId || system.date !== date)) return true;
-          return false;
-        });
-        localStore.systems = [...fetchedSystems, ...unrelatedLocalSystems];
+        const matchesScope = (system: WithId<System>) =>
+          (!goalId || system.goalId === goalId) && (!date || system.date === date);
+        const localMatches = localStore.systems.filter(matchesScope);
+        const unrelatedLocalSystems = localStore.systems.filter(system => !matchesScope(system));
+        const mergedSystems = mergeRemoteActions(fetchedSystems, localMatches);
+        localStore.systems = [...mergedSystems, ...unrelatedLocalSystems];
         await localStore.save();
 
-        return fetchedSystems;
+        return mergedSystems;
       } catch (e) {
         console.warn("Fetch systems failed, using local store", e);
         await localStore.init();
@@ -732,6 +749,9 @@ export const DataService = {
             createdAt: serverTimestamp()
         }), 'createGoalSystem');
         const added = { ...systemData, id: ref.id };
+        await localStore.init();
+        localStore.systems = [added, ...localStore.systems.filter(system => system.id !== added.id)];
+        await localStore.save();
         await this.scheduleReminder(added);
         return added;
     } catch (e) {

@@ -14,14 +14,14 @@ import { AiService, NextBestAction } from '../lib/AiService';
 
 export default function GoalDetailsScreen() {
   const route = useRoute<any>();
-  const navigation = useNavigation();
+  const navigation = useNavigation<any>();
   const { goalId, openJournal } = route.params;
-  const { user } = useAuth();
+  const { user, subscriptionTier, upgradeToPremium } = useAuth();
   
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const [goal, setGoal] = useState<Goal | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [systems, setSystems] = useState<System[]>([]);
+  const [goal, setGoal] = useState<WithId<Goal> | null>(null);
+  const [tasks, setTasks] = useState<WithId<Task>[]>([]);
+  const [systems, setSystems] = useState<WithId<System>[]>([]);
   const [loading, setLoading] = useState(true);
   const [habitStats, setHabitStats] = useState<{ stage: HabitStage; completedCount: number } | null>(null);
 
@@ -54,23 +54,19 @@ export default function GoalDetailsScreen() {
     const stats = await DataService.getHabitStage(uid, goalId);
     setHabitStats(stats);
 
-    // Fetch Actions based on View Mode
-    let fetchedTasks: Task[] = [];
-    let fetchedSystems: System[] = [];
+    // Fetch once by goal and filter dates locally. This avoids a compound Firestore
+    // query and keeps detail views consistent with the dashboard's cached data.
+    const [allTasks, allSystems] = await Promise.all([
+        DataService.getTasks(uid, goalId),
+        DataService.getSystems(uid, goalId)
+    ]);
+    let fetchedTasks: WithId<Task>[] = [];
+    let fetchedSystems: WithId<System>[] = [];
 
     if (viewMode === 'day') {
-        [fetchedTasks, fetchedSystems] = await Promise.all([
-            DataService.getTasks(uid, goalId, dateString),
-            DataService.getSystems(uid, goalId, dateString)
-        ]);
+        fetchedTasks = allTasks.filter(task => task.date === dateString);
+        fetchedSystems = allSystems.filter(system => system.date === dateString);
     } else {
-        // For Week/Month, we might need a range query or client-side filter
-        // Currently DataService.getTasks only supports specific date or all for goal
-        // We'll fetch all for goal and filter locally for now (efficient enough for < 1000 items)
-        const [allTasks, allSystems] = await Promise.all([
-            DataService.getTasks(uid, goalId),
-            DataService.getSystems(uid, goalId)
-        ]);
 
         let start, end;
         if (viewMode === 'week') {
@@ -81,8 +77,8 @@ export default function GoalDetailsScreen() {
             end = endOfMonth(selectedDate);
         }
 
-        fetchedTasks = allTasks.filter(t => t.date && isWithinInterval(new Date(t.date), { start, end }));
-        fetchedSystems = allSystems.filter(s => s.date && isWithinInterval(new Date(s.date), { start, end }));
+        fetchedTasks = allTasks.filter(t => t.date && isWithinInterval(new Date(`${t.date}T00:00:00`), { start, end }));
+        fetchedSystems = allSystems.filter(s => s.date && isWithinInterval(new Date(`${s.date}T00:00:00`), { start, end }));
     }
     
     setTasks(fetchedTasks);
@@ -97,10 +93,26 @@ export default function GoalDetailsScreen() {
   );
 
   useEffect(() => {
-    if (openJournal) {
+    if (openJournal && subscriptionTier === 'free') {
+      promptPremium('Journaling');
+      return;
+    }
+
+    if (openJournal && subscriptionTier !== 'free') {
       setNoteModalVisible(true);
     }
-  }, [openJournal]);
+  }, [openJournal, subscriptionTier]);
+
+  const promptPremium = (feature: string) => {
+    Alert.alert(
+      'Premium Feature',
+      `${feature} is available only for Premium subscribers.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Upgrade', onPress: upgradeToPremium }
+      ]
+    );
+  };
 
   const actions = useMemo(() => {
     const combined = [...(systems || []), ...(tasks || [])];
@@ -219,6 +231,7 @@ export default function GoalDetailsScreen() {
       const recommendation = await AiService.suggestNextBestAction(goal.title, {
         category: goal.category,
         recentProgress: goal.progress || 0,
+        successRate: goal.progress || 0,
         completedCount: habitStats?.completedCount || 0,
         habitStage: habitStats?.stage || 'Intention',
         journalEntries: goal.notes?.length || 0,
@@ -251,6 +264,11 @@ export default function GoalDetailsScreen() {
   const handleNextDay = () => setSelectedDate(prev => addDays(prev, 1));
 
   const handleAddPlan = () => {
+    if (subscriptionTier === 'free') {
+        promptPremium('Create a Plan');
+        return;
+    }
+
     // Navigate based on goal type/category to the correct creation flow
     // "Habit Stacker" (habit) vs "Create Plan" (isolate)
     
@@ -534,7 +552,16 @@ export default function GoalDetailsScreen() {
 
             <View className="flex-row items-center justify-between mb-2">
                 <Text className="text-sm font-medium text-muted-foreground">Journal</Text>
-                <TouchableOpacity onPress={() => setNoteModalVisible(true)} className="flex-row items-center">
+                <TouchableOpacity
+                    onPress={() => {
+                      if (subscriptionTier === 'free') {
+                        promptPremium('Journaling');
+                        return;
+                      }
+                      setNoteModalVisible(true);
+                    }}
+                    className="flex-row items-center"
+                >
                     <Plus size={16} color="#0ea5e9" className="mr-1" />
                     <Text className="text-sky-500 text-xs font-bold">Add Entry</Text>
                 </TouchableOpacity>

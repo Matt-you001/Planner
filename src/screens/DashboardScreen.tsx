@@ -41,14 +41,14 @@ export default function DashboardScreen() {
   const loadDashboardData = useCallback(async () => {
     if (!user) return;
     setIsDataLoading(true);
-    const [fetchedTasks, fetchedSystems, fetchedGoals, fetchedJournals] = await Promise.all([
-        DataService.getTasks(user.uid, undefined, today),
-        DataService.getSystems(user.uid, undefined, today),
+    const [allTasks, allSystems, fetchedGoals, fetchedJournals] = await Promise.all([
+        DataService.getTasks(user.uid),
+        DataService.getSystems(user.uid),
         DataService.getGoals(user.uid),
         DataService.getJournals(user.uid, today)
     ]);
-    setTasks(fetchedTasks);
-    setSystems(fetchedSystems);
+    setTasks(allTasks.filter(task => task.date === today));
+    setSystems(allSystems.filter(system => system.date === today));
     setGoals(fetchedGoals);
     setJournals(fetchedJournals);
     setIsDataLoading(false);
