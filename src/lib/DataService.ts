@@ -96,6 +96,9 @@ const mergeRemoteActions = <T extends StoredAction>(remote: T[], local: T[]): T[
   return [...remote, ...pendingLocal];
 };
 
+const getNotificationActivityTitle = (title: string) =>
+  title.replace(/^\s*(?:cue|habit|stack|reward)\s*:\s*/i, '').trim();
+
 const normalizeJournalEntry = (id: string, data: any): JournalEntry => ({
   id,
   content: data.content || '',
@@ -345,9 +348,10 @@ export const DataService = {
     if (triggerDate.getTime() < Date.now()) return;
 
     try {
+        const activityTitle = getNotificationActivityTitle(item.title) || item.title.trim();
         const notificationId = await NotificationService.scheduleNotification(
           'goalTitle' in item ? item.goalTitle : item.title,
-          `It's time to ${item.title}`,
+          `It's time to: ${activityTitle}`,
           triggerDate,
           item.linkedApp ? { linkedApp: item.linkedApp } : undefined
         );
